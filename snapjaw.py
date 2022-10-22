@@ -268,19 +268,28 @@ def get_git_progress_callback():
 def find_addons(directory, game_version) -> list[AddonInfo]:
     addons_by_subdir = {}
     for addon_dir, toc_path in find_toc_files(directory):
-        with open(toc_path, encoding='utf-8') as toc_file_object:
-            match = re.search(r'## Interface: (?P<v>\d+)', toc_file_object.read())
-            if not match:
+        match = re.search(r'## Interface: (?P<v>\d+)', read_file(toc_path))
+        if not match:
+            assert False # TODO raise proper error
+        addon_game_version = int(match.groupdict()['v'])
+        if addon_game_version <= game_version:
+            addon = AddonInfo()
+            addon.name = os.path.splitext(os.path.basename(toc_path))[0]
+            addon.src_dir = addon_dir
+            if addon.src_dir in addons_by_subdir:
                 assert False # TODO raise proper error
-            addon_game_version = int(match.groupdict()['v'])
-            if addon_game_version <= game_version:
-                addon = AddonInfo()
-                addon.name = os.path.splitext(os.path.basename(toc_path))[0]
-                addon.src_dir = addon_dir
-                if addon.src_dir in addons_by_subdir:
-                    assert False # TODO raise proper error
-                addons_by_subdir[addon.src_dir] = addon
+            addons_by_subdir[addon.src_dir] = addon
     return addons_by_subdir.values()
+
+
+def read_file(path: str) -> str:
+    for encoding in ['utf-8', None]:
+        with open(path, encoding=encoding) as fp:
+            try:
+                return fp.read()
+            except UnicodeDecodeError:
+                pass
+    raise ValueError(f'Unable to guess encoding of {path}')
 
 
 def sort_addons_dict(d: dict) -> dict:
