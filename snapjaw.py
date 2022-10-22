@@ -295,8 +295,8 @@ def read_file(path: str) -> str:
 def sort_addons_dict(d: dict) -> dict:
     return {k: v for k, v in sorted(d.items(), key=lambda kv: kv[0].lower())}
 
-# TODO annotate: generator of tuple of path
-def find_toc_files(directory):
+
+def find_toc_files(directory) -> Generator[tuple[str, str], None, None]:
     for folder, subfolders, files in os.walk(directory):
         for filename in files:
             if os.path.splitext(filename.lower())[1] == '.toc':
