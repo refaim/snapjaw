@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "snapjaw"
+version = "1.0"
+description = "Vanilla WoW AddOn Manager"
+authors = ["Roman Kharitonov <rkharito@yandex.ru>"]
+license = "GPL-3.0-or-later"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+GitPython = "^3.1.27"
+tabulate = "^0.8.10"
+colorama = "^0.4.5"
+dataclasses-json = "^0.5.7"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
