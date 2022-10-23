@@ -84,11 +84,16 @@ def parse_args():
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(required=True)
 
+    # TODO guess automatically by cwd
     parser.add_argument('--addons-dir', required=True, type=arg_type_dir)
 
     install = subparsers.add_parser('install', help='install new addon(s)')
     install.add_argument('url', type=arg_type_git_repo_url, help='url to git repository')
     install.set_defaults(callback=functools.partial(run_command, cmd_install, False))
+
+    update = subparsers.add_parser('update', help='update installed addon(s)')
+    update.add_argument('name', help='addon name')
+    update.set_defaults(callback=functools.partial(run_command, cmd_update, False))
 
     status = subparsers.add_parser('status', help='list installed addons')
     status.set_defaults(callback=functools.partial(run_command, cmd_status, True))
@@ -130,17 +135,20 @@ def run_command(cmd_callback, read_only, args):
 
 
 def cmd_install(config: Config, args):
-    logging.info(f'Cloning {args.url}')
-    with clone_git_repo(args.url) as repo:
+    return install_addon(config, args.url, args.addons_dir)
+
+
+def install_addon(config: Config, repo_url: str, addons_dir: str) -> None:
+    logging.info(f'Cloning {repo_url}')
+    with clone_git_repo(repo_url) as repo:
         repo: git.Repo
 
         addons = find_addons(repo.working_dir, 11200)
         if not addons:
             raise ValueError('no addons found')
         for addon in addons:
-            # TODO list addons, ask for install each?
             logging.info(f'Installing addon "{addon.name}"')
-            dst_addon_dir = os.path.join(args.addons_dir, addon.name)
+            dst_addon_dir = os.path.join(addons_dir, addon.name)
             if os.path.exists(dst_addon_dir):
                 # TODO backup
                 # TODO compare versions
@@ -176,6 +184,13 @@ def cmd_install(config: Config, args):
             config.save()
 
             logging.info('Done')
+
+
+def cmd_update(config: Config, args):
+    addon = config.addons_by_name.get(args.name)
+    if addon is None:
+        raise argparse.ArgumentTypeError('unknown addon')
+    return install_addon(config, addon.source.url, args.addons_dir)
 
 
 def cmd_status(config: Config, args):
@@ -239,6 +254,7 @@ def cmd_status(config: Config, args):
         print('No addons found')
         return
 
+    # TODO: human-readable format
     def format_dt(dt: Optional[datetime]) -> str:
         if not dt:
             return ''
