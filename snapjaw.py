@@ -2,6 +2,7 @@ import argparse
 import contextlib
 import functools
 import glob
+import humanize
 import json
 import logging
 import math
@@ -254,11 +255,10 @@ def cmd_status(config: Config, args):
         print('No addons found')
         return
 
-    # TODO: human-readable format
     def format_dt(dt: Optional[datetime]) -> str:
         if not dt:
             return ''
-        return dt.strftime('%d.%m.%Y %H:%M')
+        return humanize.naturaldate(dt)
 
     table = []
     for name, state in sort_addons_dict(addon_name_to_state).items():

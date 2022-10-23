@@ -11,6 +11,7 @@ GitPython = "^3.1.27"
 tabulate = "^0.8.10"
 colorama = "^0.4.5"
 dataclasses-json = "^0.5.7"
+humanize = "^4.4.0"
 
 [build-system]
 requires = ["poetry-core"]
