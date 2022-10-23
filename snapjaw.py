@@ -11,6 +11,7 @@ import shutil
 import sys
 import tempfile
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
@@ -22,11 +23,14 @@ import tabulate
 from dataclasses_json import dataclass_json
 
 
+# TODO incorporate to ConfigAddon
 @dataclass_json
 @dataclass
 class ConfigAddonSource:
+    # TODO remove this
     type_: str
     url: str
+    # TODO move to typed fields
     attributes: dict
 
 
@@ -175,47 +179,63 @@ def cmd_install(config: Config, args):
 
 
 def cmd_status(config: Config, args):
-    @dataclass(init=False)
+    @dataclass
+    class GitRepoState:
+        url: str
+        branch: str
+        head_commit_hash: Optional[str]
+
+    ref_to_addons = {}
+    for addon in config.addons_by_name.values():
+        repo_url = addon.source.url
+        repo_branch = addon.source.attributes['branch']
+        ref_to_addons.setdefault((repo_url, repo_branch), []).append(addon)
+
+    # TODO handle exceptions
+    def request_repo_state(state: GitRepoState) -> GitRepoState:
+        upstream_hash = None
+        # https://git-scm.com/docs/git-ls-remote.html
+        for line in git.cmd.Git().ls_remote('--refs', '--heads', state.url).splitlines():
+            ref_hash, ref = line.split()
+            if ref.endswith('/' + state.branch):
+                upstream_hash = ref_hash
+        state.head_commit_hash = upstream_hash
+        return state
+
+    repo_states = [GitRepoState(repo_url, repo_branch, None) for repo_url, repo_branch in ref_to_addons.keys()]
+    executor = ThreadPoolExecutor()
+    futures = [executor.submit(request_repo_state, state) for state in repo_states]
+    for i, future in enumerate(as_completed(futures)):
+        future.result()
+        print(f'{i + 1}/{len(repo_states)}', end='\r')
+
+    @dataclass
     class AddonState:
         name: str
         status: str
         released_at: Optional[datetime] = None
         installed_at: Optional[datetime] = None
 
-    # TODO optimization: loop over sources
-    # TODO multithreading
-    addon_to_status = {}
-    for fn in os.listdir(args.addons_dir):
-        if os.path.isdir(os.path.join(args.addons_dir, fn)) and not fn.startswith('Blizzard_'):
-            config_addon = config.addons_by_name.get(fn)
-            state = AddonState()
-            if not config_addon:
-                status = 'untracked'
+    addon_name_to_state = {}
+    for repo_state in repo_states:
+        for addon in ref_to_addons[(repo_state.url, repo_state.branch)]:
+            if repo_state.head_commit_hash is None:
+                status = 'unknown'
+            elif repo_state.head_commit_hash == addon.source.attributes['commit']['hash']:
+                status = 'up-to-date'
             else:
-                state.released_at = config_addon.released_at
-                state.installed_at = config_addon.installed_at
-                upstream_hash = None
-                # https://git-scm.com/docs/git-ls-remote.html
-                for line in git.cmd.Git().ls_remote('--refs', '--heads', config_addon.source.url).splitlines():
-                    ref_hash, ref = line.split()
-                    if ref.endswith('/' + config_addon.source.attributes['branch']):
-                        upstream_hash = ref_hash
-                if upstream_hash is None:
-                    status = 'unknown'
-                elif upstream_hash != config_addon.source.attributes['commit']['hash']:
-                    status = 'outdated'
-                else:
-                    status = 'up-to-date'
+                status = 'outdated'
+            addon_name_to_state[addon.name] = AddonState(addon.name, status, addon.released_at, addon.installed_at)
 
-            state.status = status
-            addon_to_status[fn] = state
+    for name in os.listdir(args.addons_dir):
+        path = os.path.join(args.addons_dir, name)
+        if os.path.isdir(path) and not name.startswith('Blizzard_') and name not in addon_name_to_state:
+            addon_name_to_state[name] = AddonState(name, 'untracked', None, None)
 
-    for missing_folder in set(config.addons_by_name.keys()) - set(addon_to_status.keys()):
-        state = AddonState()
-        state.status = 'folder_missing'
-        addon_to_status[missing_folder] = state
+    for name in set(config.addons_by_name.keys()) - set(addon_name_to_state.keys()):
+        addon_name_to_state[name] = AddonState(name, 'folder-missing', None, None)
 
-    if not addon_to_status:
+    if not addon_name_to_state:
         print('No addons found')
         return
 
@@ -225,7 +245,7 @@ def cmd_status(config: Config, args):
         return dt.strftime('%d.%m.%Y %H:%M')
 
     table = []
-    for name, state in sort_addons_dict(addon_to_status).items():
+    for name, state in sort_addons_dict(addon_name_to_state).items():
         color = {
             'folder_missing': cr.Fore.RED,
             'outdated': cr.Fore.YELLOW,
