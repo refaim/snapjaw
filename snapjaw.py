@@ -92,6 +92,10 @@ def parse_args():
     install.add_argument('url', type=arg_type_git_repo_url, help='url to git repository')
     install.set_defaults(callback=functools.partial(run_command, cmd_install, False))
 
+    update = subparsers.add_parser('remove', help='remove installed addon(s)')
+    update.add_argument('name', help='addon name')
+    update.set_defaults(callback=functools.partial(run_command, cmd_remove, False))
+
     update = subparsers.add_parser('update', help='update installed addon(s)')
     update.add_argument('name', help='addon name')
     update.set_defaults(callback=functools.partial(run_command, cmd_update, False))
@@ -128,7 +132,9 @@ def run_command(cmd_callback, read_only, args):
     try:
         cmd_callback(config, args)
         if not read_only:
+            logging.info('Saving config...')
             config.save()
+            logging.info('Done!')
     except Exception:
         if not read_only and os.path.exists(backup_path):
             shutil.copyfile(backup_path, config_path)
@@ -185,6 +191,18 @@ def install_addon(config: Config, repo_url: str, addons_dir: str) -> None:
             config.save()
 
             logging.info('Done')
+
+
+def cmd_remove(config: Config, args):
+    addon = config.addons_by_name.get(args.name)
+    if addon is None:
+        raise argparse.ArgumentTypeError('unknown addon')
+
+    del config.addons_by_name[addon.name]
+
+    addon_path = os.path.join(args.addons_dir, args.name)
+    if os.path.exists(addon_path):
+        shutil.rmtree(addon_path)
 
 
 def cmd_update(config: Config, args):
