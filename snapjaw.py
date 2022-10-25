@@ -323,7 +323,7 @@ def get_git_progress_callback():
 def find_addons(directory, game_version) -> list[AddonInfo]:
     addons_by_subdir = {}
     for addon_dir, toc_path in find_toc_files(directory):
-        match = re.search(r'## Interface: (?P<v>\d+)', read_file(toc_path))
+        match = re.search(r'## Interface:\s+(?P<v>\d+)', read_file(toc_path))
         if not match:
             assert False # TODO raise proper error
         addon_game_version = int(match.groupdict()['v'])
