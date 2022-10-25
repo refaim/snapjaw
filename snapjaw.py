@@ -280,6 +280,7 @@ def cmd_status(config: Config, args):
 
     table = []
     for name, state in sort_addons_dict(addon_name_to_state).items():
+        # TODO calculate addon dir checksum, if differ then display "modified"
         color = {
             'folder_missing': cr.Fore.RED,
             'outdated': cr.Fore.YELLOW,
