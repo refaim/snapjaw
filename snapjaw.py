@@ -2,7 +2,6 @@ import argparse
 import contextlib
 import functools
 import glob
-import humanize
 import json
 import logging
 import math
@@ -20,7 +19,9 @@ from typing import Generator, Optional
 
 import colorama as cr
 import git
+import humanize
 import tabulate
+from checksumdir import dirhash
 from dataclasses_json import dataclass_json
 
 
@@ -33,6 +34,7 @@ class ConfigAddon:
     commit: str
     released_at: datetime
     installed_at: datetime
+    checksum: Optional[str] = None
 
 
 @dataclass_json
@@ -87,12 +89,12 @@ def parse_args():
     install.add_argument('url', type=arg_type_git_repo_url, help='url to git repository')
     install.set_defaults(callback=functools.partial(run_command, cmd_install, False))
 
-    update = subparsers.add_parser('remove', help='remove installed addon(s)')
+    update = subparsers.add_parser('remove', help='remove installed addon')
     update.add_argument('name', help='addon name')
     update.set_defaults(callback=functools.partial(run_command, cmd_remove, False))
 
     update = subparsers.add_parser('update', help='update installed addon(s)')
-    update.add_argument('name', help='addon name')
+    update.add_argument('name', help='addon name', nargs='*')
     update.set_defaults(callback=functools.partial(run_command, cmd_update, False))
 
     status = subparsers.add_parser('status', help='list installed addons')
@@ -174,7 +176,8 @@ def install_addon(config: Config, repo_url: str, addons_dir: str) -> None:
                 branch=repo.active_branch.name,
                 commit=commit.hexsha,
                 released_at=datetime.fromtimestamp(commit.committed_date),
-                installed_at=datetime.now())
+                installed_at=datetime.now(),
+                checksum=dirhash(dst_addon_dir, 'sha1'))
 
             config.addons_by_key[Config.addon_name_to_key(config_addon.name)] = config_addon
             config.save()
@@ -191,8 +194,13 @@ def cmd_remove(config: Config, args):
 
 
 def cmd_update(config: Config, args):
-    addon = get_addon_from_config(config, args.name)
-    return install_addon(config, addon.url, args.addons_dir)
+    if args.name:
+        addons = [get_addon_from_config(config, name) for name in args.name]
+    else:
+        addons = config.addons_by_key.values()
+    for addon in addons:
+        # TODO update only outdated addons
+        install_addon(config, addon.url, args.addons_dir)
 
 
 def get_addon_from_config(config: Config, addon_name: str) -> ConfigAddon:
@@ -246,6 +254,8 @@ def cmd_status(config: Config, args):
         for addon in ref_to_addons[(repo_state.url, repo_state.branch)]:
             if repo_state.head_commit_hash is None:
                 status = 'unknown'
+            elif dirhash(os.path.join(args.addons_dir, addon.name), 'sha1') != addon.checksum:
+                status = 'modified'
             elif repo_state.head_commit_hash == addon.commit:
                 status = 'up-to-date'
             else:
@@ -273,12 +283,12 @@ def cmd_status(config: Config, args):
 
     table = []
     for state in sort_addons_dict(addon_key_to_state).values():
-        # TODO calculate addon dir checksum, if differ then display "modified"
         color = {
             'folder-missing': cr.Fore.RED,
+            'modified': cr.Fore.MAGENTA,
             'outdated': cr.Fore.YELLOW,
             'unknown': cr.Fore.YELLOW,
-            'untracked': cr.Fore.RED,
+            'untracked': cr.Fore.CYAN,
             'up-to-date': cr.Fore.GREEN,
         }[state.status]
         table.append([state.name,
