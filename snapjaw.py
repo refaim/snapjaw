@@ -24,22 +24,13 @@ import tabulate
 from dataclasses_json import dataclass_json
 
 
-# TODO incorporate to ConfigAddon
-@dataclass_json
-@dataclass
-class ConfigAddonSource:
-    # TODO remove this
-    type_: str
-    url: str
-    # TODO move to typed fields
-    attributes: dict
-
-
 @dataclass_json
 @dataclass
 class ConfigAddon:
     name: str
-    source: ConfigAddonSource
+    url: str
+    branch: str
+    commit: str
     released_at: datetime
     installed_at: datetime
 
@@ -47,7 +38,7 @@ class ConfigAddon:
 @dataclass_json
 @dataclass
 class Config:
-    addons_by_name: dict[str, ConfigAddon]
+    addons_by_key: dict[str, ConfigAddon]
 
     @staticmethod
     def load_or_setup(path: str):
@@ -55,17 +46,21 @@ class Config:
             with open(path) as config_file:
                 config = Config.from_json(config_file.read())
         else:
-            config = Config(addons_by_name={})
+            config = Config(addons_by_key={})
         setattr(config, '_loaded_from', path)
         return config
 
     def save(self):
-        sorted_addons = {}
-        for k, v in sort_addons_dict(self.addons_by_name).items():
-            sorted_addons[k] = v
-        self.addons_by_name = sorted_addons
+        sorted_addons_by_key = {}
+        for k, v in sort_addons_dict(self.addons_by_key).items():
+            sorted_addons_by_key[k] = v
+        self.addons_by_key = sorted_addons_by_key
         with open(getattr(self, '_loaded_from'), 'w') as config_file:
             json.dump(json.loads(self.to_json()), config_file, indent=4)
+
+    @staticmethod
+    def addon_name_to_key(name: str) -> str:
+        return name.lower()
 
 
 @dataclass(init=False)
@@ -175,41 +170,37 @@ def install_addon(config: Config, repo_url: str, addons_dir: str) -> None:
             commit = repo.head.commit
             config_addon = ConfigAddon(
                 name=addon.name,
-                source=ConfigAddonSource(
-                    type_='git',
-                    url=repo.remotes[0].url,
-                    attributes={
-                        'branch': repo.active_branch.name,
-                        'commit': {
-                            'hash': commit.hexsha,
-                        },
-                    }),
+                url=repo.remotes[0].url,
+                branch=repo.active_branch.name,
+                commit=commit.hexsha,
                 released_at=datetime.fromtimestamp(commit.committed_date),
                 installed_at=datetime.now())
 
-            config.addons_by_name[config_addon.name] = config_addon
+            config.addons_by_key[Config.addon_name_to_key(config_addon.name)] = config_addon
             config.save()
 
             logging.info('Done')
 
 
 def cmd_remove(config: Config, args):
-    addon = config.addons_by_name.get(args.name)
-    if addon is None:
-        raise argparse.ArgumentTypeError('unknown addon')
-
-    del config.addons_by_name[addon.name]
-
+    addon = get_addon_from_config(config, args.name)
+    del config.addons_by_key[Config.addon_name_to_key(addon.name)]
     addon_path = os.path.join(args.addons_dir, args.name)
     if os.path.exists(addon_path):
         shutil.rmtree(addon_path)
 
 
 def cmd_update(config: Config, args):
-    addon = config.addons_by_name.get(args.name)
+    addon = get_addon_from_config(config, args.name)
+    return install_addon(config, addon.url, args.addons_dir)
+
+
+def get_addon_from_config(config: Config, addon_name: str) -> ConfigAddon:
+    addon_key = Config.addon_name_to_key(addon_name)
+    addon = config.addons_by_key.get(addon_key)
     if addon is None:
         raise argparse.ArgumentTypeError('unknown addon')
-    return install_addon(config, addon.source.url, args.addons_dir)
+    return addon
 
 
 def cmd_status(config: Config, args):
@@ -220,10 +211,8 @@ def cmd_status(config: Config, args):
         head_commit_hash: Optional[str]
 
     ref_to_addons = {}
-    for addon in config.addons_by_name.values():
-        repo_url = addon.source.url
-        repo_branch = addon.source.attributes['branch']
-        ref_to_addons.setdefault((repo_url, repo_branch), []).append(addon)
+    for addon in config.addons_by_key.values():
+        ref_to_addons.setdefault((addon.url, addon.branch), []).append(addon)
 
     # TODO handle exceptions
     def request_repo_state(state: GitRepoState) -> GitRepoState:
@@ -250,26 +239,30 @@ def cmd_status(config: Config, args):
         released_at: Optional[datetime] = None
         installed_at: Optional[datetime] = None
 
-    addon_name_to_state = {}
+    n2k = Config.addon_name_to_key
+
+    addon_key_to_state = {}
     for repo_state in repo_states:
         for addon in ref_to_addons[(repo_state.url, repo_state.branch)]:
             if repo_state.head_commit_hash is None:
                 status = 'unknown'
-            elif repo_state.head_commit_hash == addon.source.attributes['commit']['hash']:
+            elif repo_state.head_commit_hash == addon.commit:
                 status = 'up-to-date'
             else:
                 status = 'outdated'
-            addon_name_to_state[addon.name] = AddonState(addon.name, status, addon.released_at, addon.installed_at)
+            addon_key_to_state[n2k(addon.name)] = AddonState(addon.name, status, addon.released_at, addon.installed_at)
 
     for name in os.listdir(args.addons_dir):
         path = os.path.join(args.addons_dir, name)
-        if os.path.isdir(path) and not name.startswith('Blizzard_') and name not in addon_name_to_state:
-            addon_name_to_state[name] = AddonState(name, 'untracked', None, None)
+        name_key = n2k(name)
+        if os.path.isdir(path) and not name.startswith('Blizzard_') and name_key not in addon_key_to_state:
+            addon_key_to_state[name_key] = AddonState(name, 'untracked', None, None)
 
-    for name in set(config.addons_by_name.keys()) - set(addon_name_to_state.keys()):
-        addon_name_to_state[name] = AddonState(name, 'folder-missing', None, None)
+    for name in set(config.addons_by_key.keys()) - set(addon_key_to_state.keys()):
+        name_key = n2k(name)
+        addon_key_to_state[name_key] = AddonState(name, 'folder-missing', None, None)
 
-    if not addon_name_to_state:
+    if not addon_key_to_state:
         print('No addons found')
         return
 
@@ -279,16 +272,16 @@ def cmd_status(config: Config, args):
         return humanize.naturaldate(dt)
 
     table = []
-    for name, state in sort_addons_dict(addon_name_to_state).items():
+    for state in sort_addons_dict(addon_key_to_state).values():
         # TODO calculate addon dir checksum, if differ then display "modified"
         color = {
-            'folder_missing': cr.Fore.RED,
+            'folder-missing': cr.Fore.RED,
             'outdated': cr.Fore.YELLOW,
             'unknown': cr.Fore.YELLOW,
             'untracked': cr.Fore.RED,
             'up-to-date': cr.Fore.GREEN,
         }[state.status]
-        table.append([name,
+        table.append([state.name,
                       color + state.status + cr.Fore.RESET,
                       format_dt(state.released_at),
                       format_dt(state.installed_at)])
@@ -348,7 +341,7 @@ def read_file(path: str) -> str:
 
 
 def sort_addons_dict(d: dict) -> dict:
-    return {k: v for k, v in sorted(d.items(), key=lambda kv: kv[0].lower())}
+    return {k: v for k, v in sorted(d.items(), key=lambda kv: (kv[0], kv[1]))}
 
 
 def find_toc_files(directory) -> Generator[tuple[str, str], None, None]:
