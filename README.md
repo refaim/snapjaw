@@ -1,4 +1,5 @@
 # snapjaw: Vanilla World of Warcraft AddOn manager
+[![CodeQL](https://github.com/refaim/snapjaw/actions/workflows/codeql.yml/badge.svg?branch=master)](https://github.com/refaim/snapjaw/actions/workflows/codeql.yml)
 
 ## Features
 - Git repositories as addon sources
