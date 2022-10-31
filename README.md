@@ -1,14 +1,16 @@
-# Features
+# snapjaw: Vanilla World of Warcraft AddOn manager
+
+## Features
 - Git repositories as addon sources
 - Outdated and/or modified addon detection
 - Fast addon update check thanks to multithreading
 - Simple command line interface
 
-# Requirements
+## Requirements
 - [Python 3.10](https://www.python.org)
 - [poetry](https://python-poetry.org)
 
-# Usage examples
+## Usage examples
 ```
 cd c:\games\wow
 snapjaw install https://github.com/refaim/TrainerSkills-vanilla
