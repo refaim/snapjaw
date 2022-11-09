@@ -25,7 +25,7 @@ snapjaw install https://github.com/refaim/TrainerSkills-vanilla
 ```
 ---
 ```
-snapjaw status
+snapjaw status -v
 ```
 ```
 addon                          status      released_at    installed_at

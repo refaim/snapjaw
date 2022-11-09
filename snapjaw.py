@@ -11,6 +11,7 @@ import shutil
 import sys
 import tempfile
 import urllib.parse
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -98,6 +99,7 @@ def parse_args():
     update.set_defaults(callback=functools.partial(run_command, cmd_update, False))
 
     status = subparsers.add_parser('status', help='list installed addons')
+    status.add_argument('-v', '--verbose', action='store_true', help='enable more verbose output')
     status.set_defaults(callback=functools.partial(run_command, cmd_status, True))
 
     return parser.parse_args()
@@ -291,12 +293,18 @@ def cmd_status(config: Config, args):
             'untracked': cr.Fore.CYAN,
             'up-to-date': cr.Fore.GREEN,
         }[state.status]
-        table.append([state.name,
-                      color + state.status + cr.Fore.RESET,
-                      format_dt(state.released_at),
-                      format_dt(state.installed_at)])
+        if args.verbose or state.status != 'up-to-date':
+            table.append([state.name,
+                          color + state.status + cr.Fore.RESET,
+                          format_dt(state.released_at),
+                          format_dt(state.installed_at)])
     cr.init()
-    print(tabulate.tabulate(table, headers=['addon', 'status', 'released_at', 'installed_at']))
+    print(tabulate.tabulate(table, tablefmt='psql', headers=['addon', 'status', 'released_at', 'installed_at']))
+    if not args.verbose:
+        num_updated = Counter(s.status for s in addon_key_to_state.values())['up-to-date']
+        if num_updated > 0:
+            msg = f'{num_updated}{" other" if table else ""} addons are up to date'
+            print(cr.Fore.GREEN + msg + cr.Fore.RESET)
     cr.deinit()
 
 
