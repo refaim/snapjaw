@@ -155,10 +155,9 @@ def install_addon(config: Config, repo_url: str, addons_dir: str) -> None:
         for addon in addons:
             logging.info(f'Installing addon "{addon.name}"')
             dst_addon_dir = os.path.join(addons_dir, addon.name)
-            if os.path.exists(dst_addon_dir):
-                # TODO backup
-                # TODO compare versions
-                shutil.rmtree(dst_addon_dir)
+            # TODO backup
+            # TODO compare versions
+            remove_addon_dir(dst_addon_dir)
 
             shutil.copytree(addon.src_dir, dst_addon_dir, ignore=shutil.ignore_patterns('.git*'))
 
@@ -190,9 +189,22 @@ def install_addon(config: Config, repo_url: str, addons_dir: str) -> None:
 def cmd_remove(config: Config, args):
     addon = get_addon_from_config(config, args.name)
     del config.addons_by_key[Config.addon_name_to_key(addon.name)]
-    addon_path = os.path.join(args.addons_dir, args.name)
-    if os.path.exists(addon_path):
-        shutil.rmtree(addon_path)
+    remove_addon_dir(os.path.join(args.addons_dir, args.name))
+
+
+def remove_addon_dir(path):
+    if os.path.islink(path):
+        os.remove(path)
+    elif os.path.isdir(path):
+        try:
+            shutil.rmtree(path)
+        except OSError as e:
+            if e.args and e.args[0] == 'Cannot call rmtree on a symbolic link':
+                os.remove(path)
+            else:
+                raise
+    else:
+        assert False
 
 
 def cmd_update(config: Config, args):
