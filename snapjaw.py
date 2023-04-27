@@ -157,7 +157,8 @@ def install_addon(config: Config, repo_url: str, addons_dir: str) -> None:
             dst_addon_dir = os.path.join(addons_dir, addon.name)
             # TODO backup
             # TODO compare versions
-            remove_addon_dir(dst_addon_dir)
+            if os.path.exists(dst_addon_dir):
+                remove_addon_dir(dst_addon_dir)
 
             shutil.copytree(addon.src_dir, dst_addon_dir, ignore=shutil.ignore_patterns('.git*'))
 
