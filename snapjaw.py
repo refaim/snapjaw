@@ -81,10 +81,15 @@ def main():
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    subparsers = parser.add_subparsers(required=True)
 
-    # TODO guess automatically by cwd
-    parser.add_argument('--addons-dir', required=True, type=arg_type_dir)
+    parser.add_argument(
+        '--addons-dir',
+        required=False,
+        type=arg_type_dir,
+        default=os.path.join(os.getcwd(), 'Interface\\Addons'),
+        help='optional path to Interface\\Addons directory')
+
+    subparsers = parser.add_subparsers(required=True)
 
     install = subparsers.add_parser('install', help='install new addon(s)')
     install.add_argument('url', type=arg_type_git_repo_url, help='url to git repository')
