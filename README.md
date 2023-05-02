@@ -7,9 +7,10 @@
 - Fast addon update check thanks to multithreading
 - Simple command line interface
 
-## Requirements
-- [Python 3.10](https://www.python.org)
-- [poetry](https://python-poetry.org)
+## How to install
+- Download [application](https://nightly.link/refaim/snapjaw/workflows/package/master/snapjaw.zip)
+- Unpack snapjaw.exe to WoW directory (where WoW.exe is located)
+- See usage examples or run `snapjaw --help`
 
 ## Usage examples
 ```
@@ -63,3 +64,7 @@ snapjaw update ShaguTweaks
 2022-11-01 01:53:01,602 [INFO] Saving config...
 2022-11-01 01:53:01,610 [INFO] Done!
 ```
+
+## Requirements for developers
+- [Python 3.10](https://www.python.org)
+- [poetry](https://python-poetry.org)
