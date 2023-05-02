@@ -1,5 +1,5 @@
 # snapjaw: Vanilla World of Warcraft AddOn manager
-[![CodeQL](https://github.com/refaim/snapjaw/actions/workflows/codeql.yml/badge.svg?branch=master)](https://github.com/refaim/snapjaw/actions/workflows/codeql.yml) [![Package](https://github.com/refaim/snapjaw/actions/workflows/package.yml/badge.svg)](https://github.com/refaim/snapjaw/actions/workflows/package.yml)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0) [![CodeQL](https://github.com/refaim/snapjaw/actions/workflows/codeql.yml/badge.svg?branch=master)](https://github.com/refaim/snapjaw/actions/workflows/codeql.yml) [![Package](https://github.com/refaim/snapjaw/actions/workflows/package.yml/badge.svg)](https://github.com/refaim/snapjaw/actions/workflows/package.yml)
 
 ## Features
 - Git repositories as addon sources
