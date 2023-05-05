@@ -1,15 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-
 block_cipher = None
-
 
 a = Analysis(
     ['snapjaw.py'],
     pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=[],
+    hiddenimports=['_cffi_backend'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

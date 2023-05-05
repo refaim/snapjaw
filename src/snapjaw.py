@@ -1,29 +1,31 @@
 import argparse
-import contextlib
 import functools
 import glob
 import json
 import logging
-import math
+import multiprocessing
 import os
 import re
 import shutil
 import sys
-import tempfile
 import urllib.parse
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
+from tempfile import TemporaryDirectory
 from typing import Generator, Optional
 
 import colorama as cr
-import git
 import humanize
 import tabulate
 from checksumdir import dirhash
 from dataclasses_json import dataclass_json
+
+import mygit
+
+
+class CliError(RuntimeError):
+    pass
 
 
 @dataclass_json
@@ -75,7 +77,11 @@ class AddonInfo:
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     cmd_args = parse_args()
-    cmd_args.callback(cmd_args)
+    try:
+        cmd_args.callback(cmd_args)
+    except CliError as error:
+        print(str(error), file=sys.stderr)
+        return 1
     return 0
 
 
@@ -151,45 +157,49 @@ def cmd_install(config: Config, args):
 
 def install_addon(config: Config, repo_url: str, addons_dir: str) -> None:
     logging.info(f'Cloning {repo_url}')
-    with clone_git_repo(repo_url) as repo:
-        repo: git.Repo
 
-        addons = find_addons(repo.working_dir, 11200)
+    with TemporaryDirectory() as repo_dir:
+        try:
+            repo = mygit.clone(repo_url, repo_dir)
+        except mygit.GitError as error:
+            raise CliError(str(error))
+
+        addons = find_addons(repo.workdir, 11200)
         if not addons:
-            raise ValueError('no addons found')
+            raise CliError('no addons found')
+
         for addon in addons:
             logging.info(f'Installing addon "{addon.name}"')
+
             dst_addon_dir = os.path.join(addons_dir, addon.name)
             # TODO backup
-            # TODO compare versions
             if os.path.exists(dst_addon_dir):
                 remove_addon_dir(dst_addon_dir)
 
             shutil.copytree(addon.src_dir, dst_addon_dir, ignore=shutil.ignore_patterns('.git*'))
 
-            if repo.working_dir != addon.src_dir:
+            if repo.workdir != addon.src_dir:
                 # Copy additional readme files from root folder, if any
                 for wc in ['*readme*', '*.txt', '*.html']:
-                    for fn in glob.glob(wc, root_dir=repo.working_dir):
-                        src_path = os.path.join(repo.working_dir, fn)
+                    for fn in glob.glob(wc, root_dir=repo.workdir):
+                        src_path = os.path.join(repo.workdir, fn)
                         dst_path = os.path.join(dst_addon_dir, fn)
                         if not os.path.exists(dst_path):
                             shutil.copyfile(src_path, dst_path)
 
-            commit = repo.head.commit
-            config_addon = ConfigAddon(
-                name=addon.name,
-                url=repo.remotes[0].url,
-                branch=repo.active_branch.name,
-                commit=commit.hexsha,
-                released_at=datetime.fromtimestamp(commit.committed_date),
-                installed_at=datetime.now(),
-                checksum=dirhash(dst_addon_dir, 'sha1'))
+        config_addon = ConfigAddon(
+            name=addon.name,
+            url=repo_url,
+            branch=repo.branch,
+            commit=repo.head_commit_hex,
+            released_at=repo.head_commit_time,
+            installed_at=datetime.now(),
+            checksum=dirhash(dst_addon_dir, 'sha1'))
 
-            config.addons_by_key[Config.addon_name_to_key(config_addon.name)] = config_addon
-            config.save()
+        config.addons_by_key[Config.addon_name_to_key(config_addon.name)] = config_addon
+        config.save()
 
-            logging.info('Done')
+        logging.info('Done')
 
 
 def cmd_remove(config: Config, args):
@@ -232,33 +242,9 @@ def get_addon_from_config(config: Config, addon_name: str) -> ConfigAddon:
 
 
 def cmd_status(config: Config, args):
-    @dataclass
-    class GitRepoState:
-        url: str
-        branch: str
-        head_commit_hash: Optional[str]
-
-    ref_to_addons = {}
+    url_to_branch_to_addons = {}
     for addon in config.addons_by_key.values():
-        ref_to_addons.setdefault((addon.url, addon.branch), []).append(addon)
-
-    # TODO handle exceptions
-    def request_repo_state(state: GitRepoState) -> GitRepoState:
-        upstream_hash = None
-        # https://git-scm.com/docs/git-ls-remote.html
-        for line in git.cmd.Git().ls_remote('--refs', '--heads', state.url).splitlines():
-            ref_hash, ref = line.split()
-            if ref.endswith('/' + state.branch):
-                upstream_hash = ref_hash
-        state.head_commit_hash = upstream_hash
-        return state
-
-    repo_states = [GitRepoState(repo_url, repo_branch, None) for repo_url, repo_branch in ref_to_addons.keys()]
-    executor = ThreadPoolExecutor()
-    futures = [executor.submit(request_repo_state, state) for state in repo_states]
-    for i, future in enumerate(as_completed(futures)):
-        future.result()
-        print(f'{i + 1}/{len(repo_states)}', end='\r')
+        url_to_branch_to_addons.setdefault(addon.url, {}).setdefault(addon.branch, []).append(addon)
 
     @dataclass
     class AddonState:
@@ -270,13 +256,14 @@ def cmd_status(config: Config, args):
     n2k = Config.addon_name_to_key
 
     addon_key_to_state = {}
-    for repo_state in repo_states:
-        for addon in ref_to_addons[(repo_state.url, repo_state.branch)]:
-            if repo_state.head_commit_hash is None:
+    requests = [mygit.RemoteStateRequest(addon.url, addon.branch) for addon in config.addons_by_key.values()]
+    for state in mygit.fetch_states(requests):
+        for addon in url_to_branch_to_addons[state.url][state.branch]:
+            if state.head_commit_hex is None:
                 status = 'unknown'
             elif dirhash(os.path.join(args.addons_dir, addon.name), 'sha1') != addon.checksum:
                 status = 'modified'
-            elif repo_state.head_commit_hash == addon.commit:
+            elif state.head_commit_hex == addon.commit:
                 status = 'up-to-date'
             else:
                 status = 'outdated'
@@ -317,6 +304,7 @@ def cmd_status(config: Config, args):
                           format_dt(state.released_at),
                           format_dt(state.installed_at)])
     cr.init()
+    # TODO add updated_at, rename released_at
     print(tabulate.tabulate(table, tablefmt='psql', headers=['addon', 'status', 'released_at', 'installed_at']))
     if not args.verbose:
         num_updated = Counter(s.status for s in addon_key_to_state.values())['up-to-date']
@@ -326,35 +314,12 @@ def cmd_status(config: Config, args):
     cr.deinit()
 
 
-@contextmanager
-def clone_git_repo(url: str) -> Generator[git.Repo, None, None]:
-    with contextlib.ExitStack() as stack:
-        repo_dir = stack.enter_context(tempfile.TemporaryDirectory())
-        yield stack.enter_context(git.Repo.clone_from(url,
-                                                      repo_dir,
-                                                      progress=get_git_progress_callback(),
-                                                      multi_options=['--depth 1']))
-
-
-def get_git_progress_callback():
-    prev_progress_len = [0]
-
-    def progress(op_code, cur_count, max_count, message):
-        output = f'{math.ceil(cur_count / max_count * 100)}%'
-        if message:
-            output = f'{output}, {message}'
-        print(output.ljust(prev_progress_len[0], ' '), end='\r')
-        prev_progress_len[0] = len(output) + 1
-    
-    return progress
-
-
 def find_addons(directory, game_version) -> list[AddonInfo]:
     addons_by_subdir = {}
     for addon_dir, toc_path in find_toc_files(directory):
         match = re.search(r'## Interface:\s+(?P<v>\d+)', read_file(toc_path))
         if not match:
-            assert False # TODO raise proper error
+            raise CliError(f'Unable to detect addon interface version in toc file {toc_path}')
         addon_game_version = int(match.groupdict()['v'])
         if addon_game_version <= game_version:
             addon = AddonInfo()
@@ -363,7 +328,7 @@ def find_addons(directory, game_version) -> list[AddonInfo]:
             if addon.src_dir in addons_by_subdir:
                 assert False # TODO raise proper error
             addons_by_subdir[addon.src_dir] = addon
-    return addons_by_subdir.values()
+    return list(addons_by_subdir.values())
 
 
 def read_file(path: str) -> str:
@@ -373,7 +338,7 @@ def read_file(path: str) -> str:
                 return fp.read()
             except UnicodeDecodeError:
                 pass
-    raise ValueError(f'Unable to guess encoding of {path}')
+    raise CliError(f'Unable to guess encoding of {path}')
 
 
 def sort_addons_dict(d: dict) -> dict:
@@ -388,4 +353,5 @@ def find_toc_files(directory) -> Generator[tuple[str, str], None, None]:
 
 
 if __name__ == '__main__':
+    multiprocessing.freeze_support()
     sys.exit(main())
