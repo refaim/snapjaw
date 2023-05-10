@@ -8,7 +8,7 @@
 - Simple command line interface
 
 ## How to install
-- Download [application](https://nightly.link/refaim/snapjaw/workflows/package/master/snapjaw.zip)
+- [Download snapjaw](https://nightly.link/refaim/snapjaw/workflows/package/master/snapjaw.zip)
 - Unpack snapjaw.exe to WoW directory (where WoW.exe is located)
 - See usage examples or run `snapjaw --help`
 
