@@ -2,9 +2,10 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0) [![CodeQL](https://github.com/refaim/snapjaw/actions/workflows/codeql.yml/badge.svg?branch=master)](https://github.com/refaim/snapjaw/actions/workflows/codeql.yml) [![Package](https://github.com/refaim/snapjaw/actions/workflows/package.yml/badge.svg)](https://github.com/refaim/snapjaw/actions/workflows/package.yml)
 
 ## Features
-- Git repositories as addon sources
-- Outdated and/or modified addon detection
-- Fast addon update check thanks to multithreading
+- Support for Git repositories as addon sources
+- Detection of outdated and/or modified addons
+- Automatic handling of folder naming and nested addon folders
+- Fast addon update check due to multithreading implementation
 - Simple command line interface
 
 ## How to install
@@ -12,13 +13,16 @@
 - Unpack snapjaw.exe to WoW directory (where WoW.exe is located)
 - See usage examples or run `snapjaw --help`
 
+#### Note
+If you are new to snapjaw, you will need to reinstall each of your addons manually using the `snapjaw install` command. This process is essential as it creates an index file to effectively track the status of your addons folder.
+
 ## Usage examples
 ```
 cd c:\games\wow
-snapjaw install https://github.com/refaim/TrainerSkills-vanilla
+snapjaw install https://github.com/refaim/TrainerSkills
 ```
 ```
-2022-11-01 01:45:16,711 [INFO] Cloning https://github.com/refaim/TrainerSkills-vanilla.git
+2022-11-01 01:45:16,711 [INFO] Cloning https://github.com/refaim/TrainerSkills.git
 2022-11-01 01:45:18,540 [INFO] Installing addon "TrainerSkills"
 2022-11-01 01:45:18,759 [INFO] Done
 2022-11-01 01:45:18,809 [INFO] Saving config...
