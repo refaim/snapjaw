@@ -5,7 +5,6 @@ import json
 import logging
 import multiprocessing
 import os
-import re
 import shutil
 import sys
 import urllib.parse
@@ -13,7 +12,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
 from tempfile import TemporaryDirectory
-from typing import Generator, Optional
+from typing import Optional
 
 import colorama as cr
 import humanize
@@ -22,6 +21,7 @@ from checksumdir import dirhash
 from dataclasses_json import dataclass_json
 
 import mygit
+import toc
 
 
 class CliError(RuntimeError):
@@ -66,12 +66,6 @@ class Config:
     @staticmethod
     def addon_name_to_key(name: str) -> str:
         return name.lower()
-
-
-@dataclass(init=False)
-class AddonInfo:
-    name: str
-    src_dir: str
 
 
 def main():
@@ -164,11 +158,14 @@ def install_addon(config: Config, repo_url: str, addons_dir: str) -> None:
         except mygit.GitError as error:
             raise CliError(str(error))
 
-        addons = find_addons(repo.workdir, 11200)
-        if not addons:
-            raise CliError('no addons found')
+        try:
+            addons_by_dir = {item.path: item for item in toc.find_addons(repo.workdir) if item.game_version <= 11200}
+        except toc.ParseError as error:
+            raise CliError(str(error))
+        if not addons_by_dir:
+            raise CliError('no vanilla addons found')
 
-        for addon in addons:
+        for addon in addons_by_dir.values():
             logging.info(f'Installing addon "{addon.name}"')
 
             dst_addon_dir = os.path.join(addons_dir, addon.name)
@@ -176,9 +173,9 @@ def install_addon(config: Config, repo_url: str, addons_dir: str) -> None:
             if os.path.exists(dst_addon_dir):
                 remove_addon_dir(dst_addon_dir)
 
-            shutil.copytree(addon.src_dir, dst_addon_dir, ignore=shutil.ignore_patterns('.git*'))
+            shutil.copytree(addon.path, dst_addon_dir, ignore=shutil.ignore_patterns('.git*'))
 
-            if repo.workdir != addon.src_dir:
+            if repo.workdir != addon.path:
                 # Copy additional readme files from root folder, if any
                 for wc in ['*readme*', '*.txt', '*.html']:
                     for fn in glob.glob(wc, root_dir=repo.workdir):
@@ -314,42 +311,8 @@ def cmd_status(config: Config, args):
     cr.deinit()
 
 
-def find_addons(directory, game_version) -> list[AddonInfo]:
-    addons_by_subdir = {}
-    for addon_dir, toc_path in find_toc_files(directory):
-        match = re.search(r'## Interface:\s+(?P<v>\d+)', read_file(toc_path))
-        if not match:
-            raise CliError(f'Unable to detect addon interface version in toc file {toc_path}')
-        addon_game_version = int(match.groupdict()['v'])
-        if addon_game_version <= game_version:
-            addon = AddonInfo()
-            addon.name = os.path.splitext(os.path.basename(toc_path))[0]
-            addon.src_dir = addon_dir
-            if addon.src_dir in addons_by_subdir:
-                assert False # TODO raise proper error
-            addons_by_subdir[addon.src_dir] = addon
-    return list(addons_by_subdir.values())
-
-
-def read_file(path: str) -> str:
-    for encoding in ['utf-8', None]:
-        with open(path, encoding=encoding) as fp:
-            try:
-                return fp.read()
-            except UnicodeDecodeError:
-                pass
-    raise CliError(f'Unable to guess encoding of {path}')
-
-
 def sort_addons_dict(d: dict) -> dict:
     return {k: v for k, v in sorted(d.items(), key=lambda kv: (kv[0], kv[1]))}
-
-
-def find_toc_files(directory) -> Generator[tuple[str, str], None, None]:
-    for folder, subfolders, files in os.walk(directory):
-        for filename in files:
-            if os.path.splitext(filename.lower())[1] == '.toc':
-                yield folder, os.path.join(folder, filename)
 
 
 if __name__ == '__main__':
