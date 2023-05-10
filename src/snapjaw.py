@@ -1,4 +1,5 @@
 import argparse
+import enum
 import functools
 import glob
 import json
@@ -193,7 +194,7 @@ def install_addon(config: Config, repo_url: str, addons_dir: str) -> None:
             installed_at=datetime.now(),
             checksum=dirhash(dst_addon_dir, 'sha1'))
 
-        config.addons_by_key[Config.addon_name_to_key(config_addon.name)] = config_addon
+        config.addons_by_key[addon_key(config_addon.name)] = config_addon
         config.save()
 
         logging.info('Done')
@@ -201,7 +202,7 @@ def install_addon(config: Config, repo_url: str, addons_dir: str) -> None:
 
 def cmd_remove(config: Config, args):
     addon = get_addon_from_config(config, args.name)
-    del config.addons_by_key[Config.addon_name_to_key(addon.name)]
+    del config.addons_by_key[addon_key(addon.name)]
     remove_addon_dir(os.path.join(args.addons_dir, args.name))
 
 
@@ -224,59 +225,27 @@ def cmd_update(config: Config, args):
     if args.name:
         addons = [get_addon_from_config(config, name) for name in args.name]
     else:
-        addons = config.addons_by_key.values()
+        states = [state for state in get_addon_states(config, args.addons_dir) if state.status == AddonStatus.Outdated]
+        addons = [config.addons_by_key[addon_key(state.addon)] for state in states]
+
+    if not addons:
+        print('No addons to update found')
+        return
+
     for addon in addons:
-        # TODO update only outdated addons
         install_addon(config, addon.url, args.addons_dir)
 
 
 def get_addon_from_config(config: Config, addon_name: str) -> ConfigAddon:
-    addon_key = Config.addon_name_to_key(addon_name)
-    addon = config.addons_by_key.get(addon_key)
+    addon = config.addons_by_key.get(addon_key(addon_name))
     if addon is None:
         raise argparse.ArgumentTypeError('unknown addon')
     return addon
 
 
 def cmd_status(config: Config, args):
-    url_to_branch_to_addons = {}
-    for addon in config.addons_by_key.values():
-        url_to_branch_to_addons.setdefault(addon.url, {}).setdefault(addon.branch, []).append(addon)
-
-    @dataclass
-    class AddonState:
-        name: str
-        status: str
-        released_at: Optional[datetime] = None
-        installed_at: Optional[datetime] = None
-
-    n2k = Config.addon_name_to_key
-
-    addon_key_to_state = {}
-    requests = [mygit.RemoteStateRequest(addon.url, addon.branch) for addon in config.addons_by_key.values()]
-    for state in mygit.fetch_states(requests):
-        for addon in url_to_branch_to_addons[state.url][state.branch]:
-            if state.head_commit_hex is None:
-                status = 'unknown'
-            elif dirhash(os.path.join(args.addons_dir, addon.name), 'sha1') != addon.checksum:
-                status = 'modified'
-            elif state.head_commit_hex == addon.commit:
-                status = 'up-to-date'
-            else:
-                status = 'outdated'
-            addon_key_to_state[n2k(addon.name)] = AddonState(addon.name, status, addon.released_at, addon.installed_at)
-
-    for name in os.listdir(args.addons_dir):
-        path = os.path.join(args.addons_dir, name)
-        name_key = n2k(name)
-        if os.path.isdir(path) and not name.startswith('Blizzard_') and name_key not in addon_key_to_state:
-            addon_key_to_state[name_key] = AddonState(name, 'untracked', None, None)
-
-    for name in set(config.addons_by_key.keys()) - set(addon_key_to_state.keys()):
-        name_key = n2k(name)
-        addon_key_to_state[name_key] = AddonState(name, 'folder-missing', None, None)
-
-    if not addon_key_to_state:
+    addon_states = get_addon_states(config, args.addons_dir)
+    if not addon_states:
         print('No addons found')
         return
 
@@ -285,34 +254,88 @@ def cmd_status(config: Config, args):
             return ''
         return humanize.naturaldate(dt)
 
+    status_to_color = {
+        AddonStatus.Missing: cr.Fore.RED,
+        AddonStatus.Modified: cr.Fore.MAGENTA,
+        AddonStatus.Outdated: cr.Fore.YELLOW,
+        AddonStatus.Unknown: cr.Fore.YELLOW,
+        AddonStatus.Untracked: cr.Fore.CYAN,
+        AddonStatus.UpToDate: cr.Fore.GREEN,
+    }
+
     table = []
-    for state in sort_addons_dict(addon_key_to_state).values():
-        color = {
-            'folder-missing': cr.Fore.RED,
-            'modified': cr.Fore.MAGENTA,
-            'outdated': cr.Fore.YELLOW,
-            'unknown': cr.Fore.YELLOW,
-            'untracked': cr.Fore.CYAN,
-            'up-to-date': cr.Fore.GREEN,
-        }[state.status]
-        if args.verbose or state.status != 'up-to-date':
-            table.append([state.name,
-                          color + state.status + cr.Fore.RESET,
+    for state in addon_states:
+        if args.verbose or state.status != AddonStatus.UpToDate:
+            table.append([state.addon,
+                          status_to_color[state.status] + state.status.value + cr.Fore.RESET,
                           format_dt(state.released_at),
                           format_dt(state.installed_at)])
     cr.init()
     # TODO add updated_at, rename released_at
     print(tabulate.tabulate(table, tablefmt='psql', headers=['addon', 'status', 'released_at', 'installed_at']))
     if not args.verbose:
-        num_updated = Counter(s.status for s in addon_key_to_state.values())['up-to-date']
+        num_updated = Counter(s.status for s in addon_states)[AddonStatus.UpToDate]
         if num_updated > 0:
             msg = f'{num_updated}{" other" if table else ""} addons are up to date'
             print(cr.Fore.GREEN + msg + cr.Fore.RESET)
     cr.deinit()
 
 
+class AddonStatus(enum.Enum):
+    Unknown = 'unknown'
+    Modified = 'modified'
+    UpToDate = 'up-to-date'
+    Outdated = 'outdated'
+    Untracked = 'untracked'
+    Missing = 'missing'
+
+
+@dataclass
+class AddonState:
+    addon: str
+    status: AddonStatus
+    released_at: Optional[datetime] = None
+    installed_at: Optional[datetime] = None
+
+
+def get_addon_states(config: Config, addons_dir: str) -> list[AddonState]:
+    url_to_branch_to_addons = {}
+    for addon in config.addons_by_key.values():
+        url_to_branch_to_addons.setdefault(addon.url, {}).setdefault(addon.branch, []).append(addon)
+
+    addon_key_to_state = {}
+    requests = [mygit.RemoteStateRequest(addon.url, addon.branch) for addon in config.addons_by_key.values()]
+    for state in mygit.fetch_states(requests):
+        for addon in url_to_branch_to_addons[state.url][state.branch]:
+            if state.head_commit_hex is None:
+                status = AddonStatus.Unknown
+            elif dirhash(os.path.join(addons_dir, addon.name), 'sha1') != addon.checksum:
+                status = AddonStatus.Modified
+            elif state.head_commit_hex == addon.commit:
+                status = AddonStatus.UpToDate
+            else:
+                status = AddonStatus.Outdated
+            addon_key_to_state[addon_key(addon.name)] = AddonState(
+                addon.name, status, addon.released_at, addon.installed_at)
+
+    for name in os.listdir(addons_dir):
+        path = os.path.join(addons_dir, name)
+        name_key = addon_key(name)
+        if os.path.isdir(path) and not name.startswith('Blizzard_') and name_key not in addon_key_to_state:
+            addon_key_to_state[name_key] = AddonState(name, AddonStatus.Untracked, None, None)
+
+    for name in set(config.addons_by_key.keys()) - set(addon_key_to_state.keys()):
+        addon_key_to_state[addon_key(name)] = AddonState(name, AddonStatus.Missing, None, None)
+
+    return list(sort_addons_dict(addon_key_to_state).values())
+
+
 def sort_addons_dict(d: dict) -> dict:
     return {k: v for k, v in sorted(d.items(), key=lambda kv: (kv[0], kv[1]))}
+
+
+def addon_key(name: str) -> str:
+    return name.lower()
 
 
 if __name__ == '__main__':
