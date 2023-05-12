@@ -93,12 +93,12 @@ def parse_args():
     install.add_argument('url', type=arg_type_git_repo_url, help='url to git repository')
     install.set_defaults(callback=functools.partial(run_command, cmd_install, False))
 
-    update = subparsers.add_parser('remove', help='remove installed addon')
-    update.add_argument('name', help='addon name')
-    update.set_defaults(callback=functools.partial(run_command, cmd_remove, False))
+    remove = subparsers.add_parser('remove', help='remove installed addon')
+    remove.add_argument('names', help='addon name', nargs='+')
+    remove.set_defaults(callback=functools.partial(run_command, cmd_remove, False))
 
     update = subparsers.add_parser('update', help='update installed addon(s)')
-    update.add_argument('name', help='addon name', nargs='*')
+    update.add_argument('names', help='addon name', nargs='*')
     update.set_defaults(callback=functools.partial(run_command, cmd_update, False))
 
     status = subparsers.add_parser('status', help='list installed addons')
@@ -124,6 +124,7 @@ def arg_type_git_repo_url(value):
     return urllib.parse.urlunparse((scheme, netloc, path, params, query, fragment))
 
 
+# TODO get rid of read_only, check config.is_dirty()
 def run_command(cmd_callback, read_only, args):
     config_path = os.path.join(args.addons_dir, 'snapjaw.json')
     backup_path = os.path.join(args.addons_dir, 'snapjaw.backup.json')
@@ -168,8 +169,7 @@ def install_addon(config: Config, repo_url: str, addons_dir: str) -> None:
 
             dst_addon_dir = os.path.join(addons_dir, addon.name)
             # TODO backup
-            if os.path.exists(dst_addon_dir):
-                remove_addon_dir(dst_addon_dir)
+            remove_addon_dir(dst_addon_dir)
 
             shutil.copytree(addon.path, dst_addon_dir, ignore=shutil.ignore_patterns('.git*'))
 
@@ -198,9 +198,15 @@ def install_addon(config: Config, repo_url: str, addons_dir: str) -> None:
 
 
 def cmd_remove(config: Config, args):
-    addon = get_addon_from_config(config, args.name)
-    del config.addons_by_key[addon_key(addon.name)]
-    remove_addon_dir(os.path.join(args.addons_dir, args.name))
+    for name in args.names:
+        key = addon_key(name)
+        addon = config.addons_by_key.get(key)
+        if addon is None:
+            print(f'Addon not found: "{name}"')
+        else:
+            print(f'Removing addon {addon.name}')
+            del config.addons_by_key[key]
+            remove_addon_dir(os.path.join(args.addons_dir, addon.name))
 
 
 def remove_addon_dir(path):
@@ -215,12 +221,12 @@ def remove_addon_dir(path):
             else:
                 raise
     else:
-        assert False
+        assert not os.path.exists(path)
 
 
 def cmd_update(config: Config, args):
-    if args.name:
-        addons = [get_addon_from_config(config, name) for name in args.name]
+    if args.names:
+        addons = [get_addon_from_config(config, name) for name in args.names]
     else:
         states = [state for state in get_addon_states(config, args.addons_dir) if state.status == AddonStatus.Outdated]
         addons = [config.addons_by_key[addon_key(state.addon)] for state in states]
