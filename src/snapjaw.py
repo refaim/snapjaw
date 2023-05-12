@@ -18,10 +18,10 @@ from typing import Optional
 import colorama as cr
 import humanize
 import tabulate
-from checksumdir import dirhash
 from dataclasses_json import dataclass_json
 
 import mygit
+import signature
 import toc
 
 
@@ -189,7 +189,7 @@ def install_addon(config: Config, repo_url: str, addons_dir: str) -> None:
             commit=repo.head_commit_hex,
             released_at=repo.head_commit_time,
             installed_at=datetime.now(),
-            checksum=dirhash(dst_addon_dir, 'sha1'))
+            checksum=signature.calculate(dst_addon_dir))
 
         config.addons_by_key[addon_key(config_addon.name)] = config_addon
         config.save()
@@ -306,7 +306,7 @@ def get_addon_states(config: Config, addons_dir: str) -> list[AddonState]:
         for addon in url_to_branch_to_addons[state.url][state.branch]:
             if state.head_commit_hex is None:
                 status = AddonStatus.Unknown
-            elif dirhash(os.path.join(addons_dir, addon.name), 'sha1') != addon.checksum:
+            elif not signature.validate(os.path.join(addons_dir, addon.name), addon.checksum):
                 status = AddonStatus.Modified
             elif state.head_commit_hex == addon.commit:
                 status = AddonStatus.UpToDate

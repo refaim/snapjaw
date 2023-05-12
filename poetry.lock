@@ -90,18 +90,6 @@ files = [
 pycparser = "*"
 
 [[package]]
-name = "checksumdir"
-version = "1.2.0"
-description = "Compute a single hash of the file contents of a directory."
-category = "main"
-optional = false
-python-versions = ">=3.6,<4.0"
-files = [
-    {file = "checksumdir-1.2.0-py3-none-any.whl", hash = "sha256:77687e16da95970c94061c74ef2e13666c4b6e0e8c90a5eaf0c8f7591332cf01"},
-    {file = "checksumdir-1.2.0.tar.gz", hash = "sha256:10bfd7518da5a14b0e9ac03e9ad105f0e70f58bba52b6e9aa2f21a3f73c7b5a8"},
-]
-
-[[package]]
 name = "colorama"
 version = "0.4.6"
 description = "Cross-platform colored terminal text."
@@ -412,4 +400,4 @@ typing-extensions = ">=3.7.4"
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<3.12"
-content-hash = "2690ddef0ef28bccdb49aaac0d6a552f33ca5698b381693a91d57d3fc8e3b994"
+content-hash = "1b8331801896a4776b0c28e1d09c199168bcec44d18ebdd1657f5d8c3ee1a419"
