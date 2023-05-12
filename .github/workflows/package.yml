@@ -2,13 +2,13 @@ name: Package
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
   pull_request:
-    branches: [ master ]
+    branches: [master]
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -18,19 +18,18 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Prepare dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install --upgrade poetry
-          poetry export --format requirements.txt >src/requirements.txt
+          poetry install --no-root
 
       - name: Build
-        uses: JackMcKew/pyinstaller-action-windows@python3-10-pyinstaller-5-3
-        with:
-          path: src
+        run:
+          poetry run nuitka --onefile --standalone --prefer-source-code --assume-yes-for-downloads --show-scons --output-dir=build --remove-output --include-module=_cffi_backend src/snapjaw.py
 
       - name: Upload
         uses: actions/upload-artifact@v3
         with:
           name: snapjaw
-          path: src/dist/windows
+          path: build/snapjaw.exe
