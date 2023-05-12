@@ -57,10 +57,7 @@ class Config:
         return config
 
     def save(self):
-        sorted_addons_by_key = {}
-        for k, v in sort_addons_dict(self.addons_by_key).items():
-            sorted_addons_by_key[k] = v
-        self.addons_by_key = sorted_addons_by_key
+        self.addons_by_key = sort_addons_dict(self.addons_by_key)
         with open(getattr(self, '_loaded_from'), 'w') as config_file:
             json.dump(json.loads(self.to_json()), config_file, indent=4)
 
