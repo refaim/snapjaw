@@ -182,17 +182,15 @@ def install_addon(config: Config, repo_url: str, addons_dir: str) -> None:
                         if not os.path.exists(dst_path):
                             shutil.copyfile(src_path, dst_path)
 
-        config_addon = ConfigAddon(
-            name=addon.name,
-            url=repo_url,
-            branch=repo.branch,
-            commit=repo.head_commit_hex,
-            released_at=repo.head_commit_time,
-            installed_at=datetime.now(),
-            checksum=signature.calculate(dst_addon_dir))
-
-        config.addons_by_key[addon_key(config_addon.name)] = config_addon
-        config.save()
+            config.addons_by_key[addon_key(addon.name)] = ConfigAddon(
+                name=addon.name,
+                url=repo_url,
+                branch=repo.branch,
+                commit=repo.head_commit_hex,
+                released_at=repo.head_commit_time,
+                installed_at=datetime.now(),
+                checksum=signature.calculate(dst_addon_dir))
+            config.save()
 
         logging.info('Done')
 
