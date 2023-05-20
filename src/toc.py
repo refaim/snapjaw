@@ -1,8 +1,7 @@
-import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Generator
+from typing import Generator, Optional
 
 
 @dataclass
@@ -35,18 +34,16 @@ def find_addons(dir_path: str, max_game_version: int) -> Generator[Addon, None, 
 def _find_toc_files(root_dir: str, max_game_version: int) -> Generator[_TocFile, None, None]:
     for path in Path(root_dir).rglob('*'):
         if path.is_file() and path.suffix.lower() == '.toc':
-            match = re.search(r'## Interface:\s+(?P<v>\d+)', _read(path))
+            game_version = _get_game_version(path)
+            if game_version is not None and game_version <= max_game_version:
+                yield _TocFile(path, game_version)
+
+
+def _get_game_version(toc_path: Path) -> Optional[int]:
+    regexp = re.compile(b'## Interface: *(?P<v>[0-9]+)')
+    with toc_path.open(mode='rb') as fp:
+        for line in fp:
+            match = regexp.search(line)
             if match:
-                game_version = int(match.groupdict()['v'])
-                if game_version <= max_game_version:
-                    yield _TocFile(path, game_version)
-
-
-def _read(path: Path) -> str:
-    for encoding in ['utf-8', None]:
-        with path.open(encoding=encoding) as fp:
-            try:
-                return fp.read()
-            except UnicodeDecodeError:
-                pass
-    raise ParseError(f'Unable to guess encoding of {path}')
+                return int(match.groupdict()['v'])
+    return None
