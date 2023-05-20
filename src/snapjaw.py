@@ -2,6 +2,7 @@ import argparse
 import enum
 import functools
 import glob
+from pathlib import Path
 import json
 import logging
 import multiprocessing
@@ -72,7 +73,7 @@ def main():
     try:
         cmd_args.callback(cmd_args)
     except CliError as error:
-        print(str(error), file=sys.stderr)
+        print(f'error: {error}', file=sys.stderr)
         return 1
     return 0
 
@@ -80,11 +81,22 @@ def main():
 def parse_args():
     parser = argparse.ArgumentParser()
 
+    wow_dir = None
+    cwd = Path.cwd()
+    while wow_dir is None and cwd != cwd.parent:
+        if cwd.joinpath('WoW.exe').is_file():
+            wow_dir = cwd
+        cwd = cwd.parent
+
+    addons_dir = None
+    if wow_dir is not None:
+        addons_dir = wow_dir.joinpath('Interface', 'Addons')
+
     parser.add_argument(
         '--addons-dir',
         required=False,
         type=arg_type_dir,
-        default=os.path.join(os.getcwd(), 'Interface\\Addons'),
+        default=addons_dir,
         help='optional path to Interface\\Addons directory')
 
     subparsers = parser.add_subparsers(required=True)
@@ -126,6 +138,9 @@ def arg_type_git_repo_url(value):
 
 # TODO get rid of read_only, check config.is_dirty()
 def run_command(cmd_callback, read_only, args):
+    if not os.path.isdir(args.addons_dir or ''):
+        raise CliError('addons directory not found')
+
     config_path = os.path.join(args.addons_dir, 'snapjaw.json')
     backup_path = os.path.join(args.addons_dir, 'snapjaw.backup.json')
     if not read_only and os.path.exists(config_path):

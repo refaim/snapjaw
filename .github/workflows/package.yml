@@ -41,11 +41,13 @@ jobs:
           key: nuitka
 
       - name: Build
-        run:
-          poetry run nuitka --onefile --standalone --prefer-source-code --mingw64 --assume-yes-for-downloads --show-scons --output-dir=build --include-module=_cffi_backend src/snapjaw.py
+        run: |
+          poetry run nuitka --standalone --prefer-source-code --mingw64 --assume-yes-for-downloads --show-scons --output-dir=build --include-module=_cffi_backend src\snapjaw.py
+          New-Item -ItemType directory -Name snapjaw\snapjaw -Path build
+          Get-Item -Path build\snapjaw.dist\* | Move-Item -Destination build\snapjaw\snapjaw
 
       - name: Upload
         uses: actions/upload-artifact@v3
         with:
           name: snapjaw
-          path: build/snapjaw.exe
+          path: build\snapjaw\
