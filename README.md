@@ -10,15 +10,15 @@
 
 ## How to install
 - [Download snapjaw](https://nightly.link/refaim/snapjaw/workflows/package/master/snapjaw.zip)
-- Unpack snapjaw.exe to WoW directory (where WoW.exe is located)
-- See usage examples or run `snapjaw --help`
+- Extract the archive into the WoW folder. This will create a structure similar to `C:\Games\WoW\snapjaw\snapjaw.exe`. Alternatively, if you choose a different destination, you'll need to specify the path to the addons directory using the `--addons-dir` argument.
+- See usage examples or run `snapjaw.exe --help`
 
 #### Note
 If you are new to snapjaw, you will need to reinstall each of your addons manually using the `snapjaw install` command. This process is essential as it creates an index file to effectively track the status of your addons folder.
 
 ## Usage examples
 ```
-cd c:\games\wow
+cd c:\games\wow\snapjaw
 snapjaw install https://github.com/refaim/TrainerSkills
 ```
 ```
