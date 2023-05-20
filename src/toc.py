@@ -1,6 +1,7 @@
 import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Generator
 
 
@@ -8,6 +9,11 @@ from typing import Generator
 class Addon:
     name: str
     path: str
+
+
+@dataclass
+class _TocFile:
+    path: Path
     game_version: int
 
 
@@ -15,27 +21,30 @@ class ParseError(RuntimeError):
     pass
 
 
-def find_addons(directory) -> Generator[Addon, None, None]:
-    for toc_path in _find_toc_files(directory):
-        match = re.search(r'## Interface:\s+(?P<v>\d+)', _read(toc_path))
-        if not match:
-            raise ParseError(f'Unable to detect addon interface version in toc file "{toc_path}"')
-        yield Addon(
-            name=os.path.splitext(os.path.basename(toc_path))[0],
-            path=os.path.dirname(toc_path),
-            game_version=int(match.groupdict()['v']))
+def find_addons(dir_path: str, max_game_version: int) -> Generator[Addon, None, None]:
+    def sort_key(toc: _TocFile) -> int:
+        return len(toc.path.parents)
+
+    addon_paths = []
+    for toc_file in sorted(_find_toc_files(dir_path, max_game_version), key=sort_key):
+        if all(parent not in addon_paths for parent in toc_file.path.parents):
+            yield Addon(name=toc_file.path.stem, path=str(toc_file.path.parent))
+            addon_paths.append(toc_file.path.parent)
 
 
-def _find_toc_files(directory) -> Generator[str, None, None]:
-    for directory, _, files in os.walk(directory):
-        for filename in files:
-            if os.path.splitext(filename.lower())[1] == '.toc':
-                yield os.path.join(directory, filename)
+def _find_toc_files(root_dir: str, max_game_version: int) -> Generator[_TocFile, None, None]:
+    for path in Path(root_dir).rglob('*'):
+        if path.is_file() and path.suffix.lower() == '.toc':
+            match = re.search(r'## Interface:\s+(?P<v>\d+)', _read(path))
+            if match:
+                game_version = int(match.groupdict()['v'])
+                if game_version <= max_game_version:
+                    yield _TocFile(path, game_version)
 
 
-def _read(path: str) -> str:
+def _read(path: Path) -> str:
     for encoding in ['utf-8', None]:
-        with open(path, encoding=encoding) as fp:
+        with path.open(encoding=encoding) as fp:
             try:
                 return fp.read()
             except UnicodeDecodeError:
