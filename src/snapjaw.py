@@ -173,7 +173,7 @@ def install_addon(config: Config, repo_url: str, addons_dir: str) -> None:
             raise CliError(str(error))
 
         try:
-            addons_by_dir = {item.path: item for item in toc.find_addons(repo.workdir) if item.game_version <= 11200}
+            addons_by_dir = {item.path: item for item in toc.find_addons(repo.workdir, 11200)}
         except toc.ParseError as error:
             raise CliError(str(error))
         if not addons_by_dir:
