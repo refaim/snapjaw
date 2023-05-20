@@ -6,6 +6,7 @@ from hashlib import sha1
 from multiprocessing import Process, Pipe
 from multiprocessing.connection import Connection
 from tempfile import TemporaryDirectory
+from typing import Optional
 
 import humanize
 import pygit2
@@ -24,14 +25,14 @@ class RepositoryInfo:
 
 
 # Workaround for https://github.com/libgit2/pygit2/issues/264
-def clone(url: str, path: str) -> RepositoryInfo:
+def clone(url: str, branch: Optional[str], path: str) -> RepositoryInfo:
     def make_pipe() -> tuple[Connection, Connection]:
         return Pipe()
 
     parent_data_conn, child_data_conn = make_pipe()
     parent_error_conn, child_error_conn = make_pipe()
 
-    process = Process(target=_clone, args=(url, path, child_data_conn, child_error_conn))
+    process = Process(target=_clone, args=(url, branch, path, child_data_conn, child_error_conn))
     process.start()
     process.join()
 
@@ -41,10 +42,10 @@ def clone(url: str, path: str) -> RepositoryInfo:
     return parent_data_conn.recv()
 
 
-def _clone(url: str, path: str, data_conn: Connection, error_conn: Connection):
+def _clone(url: str, branch: Optional[str], path: str, data_conn: Connection, error_conn: Connection):
     try:
-        repo: pygit2.Repository = pygit2.clone_repository(url, path, callbacks=_GitProgressCallbacks())
-    except pygit2.GitError as error:
+        repo: pygit2.Repository = pygit2.clone_repository(url, path, checkout_branch=branch, callbacks=_GitProgressCallbacks())
+    except (pygit2.GitError, KeyError) as error:
         error_conn.send(GitError(str(error)))
         return
     head: pygit2.Commit = repo[repo.head.target]

@@ -2,7 +2,6 @@ import argparse
 import enum
 import functools
 import glob
-from pathlib import Path
 import json
 import logging
 import multiprocessing
@@ -13,6 +12,7 @@ import urllib.parse
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Optional
 
@@ -102,7 +102,8 @@ def parse_args():
     subparsers = parser.add_subparsers(required=True)
 
     install = subparsers.add_parser('install', help='install new addon(s)')
-    install.add_argument('url', type=arg_type_git_repo_url, help='url to git repository')
+    install.add_argument('url', type=str, help='url to git repository')
+    install.add_argument('--branch', type=str, help='specific git branch to use')
     install.set_defaults(callback=functools.partial(run_command, cmd_install, False))
 
     remove = subparsers.add_parser('remove', help='remove installed addon')
@@ -124,16 +125,6 @@ def arg_type_dir(value):
     if not os.path.isdir(value):
         raise argparse.ArgumentTypeError('invalid directory path')
     return value
-
-
-def arg_type_git_repo_url(value):
-    scheme, netloc, path, params, query, fragment = urllib.parse.urlparse(value)
-    if netloc in ('github.com', 'gitlab.com'):
-        if not path.endswith('.git'):
-            path += '.git'
-    else:
-        raise argparse.ArgumentTypeError('invalid git repository url')
-    return urllib.parse.urlunparse((scheme, netloc, path, params, query, fragment))
 
 
 # TODO get rid of read_only, check config.is_dirty()
@@ -160,15 +151,34 @@ def run_command(cmd_callback, read_only, args):
 
 
 def cmd_install(config: Config, args):
-    return install_addon(config, args.url, args.addons_dir)
+    scheme, netloc, path_string, params, query, fragment = urllib.parse.urlparse(args.url)
+
+    branch_from_url = None
+    if netloc in ('github.com', 'gitlab.com'):
+        path = path_string.lstrip('/').split('/')
+        author = path.pop(0)
+        repository = path.pop(0)
+        if path:
+            if path[0] == '-' and path[1] == 'tree':
+                path = path[2:]
+            elif path[0] == 'tree':
+                path = path[1:]
+            branch_from_url = '/'.join(path)
+        path_string = '/'.join([author, repository]) + '.git'
+
+    if args.branch and branch_from_url and args.branch != branch_from_url:
+        raise CliError(f'requested branch {args.branch}, but found branch {branch_from_url} in repository URL')
+
+    repo_url = urllib.parse.urlunparse((scheme, netloc, path_string, params, query, fragment))
+    return install_addon(config, repo_url, args.branch or branch_from_url, args.addons_dir)
 
 
-def install_addon(config: Config, repo_url: str, addons_dir: str) -> None:
+def install_addon(config: Config, repo_url: str, branch: Optional[str], addons_dir: str) -> None:
     logging.info(f'Cloning {repo_url}')
 
     with TemporaryDirectory() as repo_dir:
         try:
-            repo = mygit.clone(repo_url, repo_dir)
+            repo = mygit.clone(repo_url, branch, repo_dir)
         except mygit.GitError as error:
             raise CliError(str(error))
 
@@ -180,7 +190,7 @@ def install_addon(config: Config, repo_url: str, addons_dir: str) -> None:
             raise CliError('no vanilla addons found')
 
         for addon in addons_by_dir.values():
-            logging.info(f'Installing addon "{addon.name}"')
+            logging.info(f'Installing addon "{addon.name}", branch "{repo.branch}"')
 
             dst_addon_dir = os.path.join(addons_dir, addon.name)
             # TODO backup
@@ -249,7 +259,7 @@ def cmd_update(config: Config, args):
         return
 
     for addon in addons:
-        install_addon(config, addon.url, args.addons_dir)
+        install_addon(config, addon.url, addon.branch, args.addons_dir)
 
 
 def get_addon_from_config(config: Config, addon_name: str) -> ConfigAddon:
