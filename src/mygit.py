@@ -126,8 +126,9 @@ def fetch_states(requests: list[RemoteStateRequest]) -> list[RemoteState]:
         for i, future in enumerate(as_completed(futures)):
             ls_result: _RemoteLsResult = future.result()
             for branch in remote_name_to_branches[ls_result.remote.name]:
+                branch_ref = f'refs/heads/{branch}'
                 for ref in ls_result.refs:
-                    if ref['name'] == 'HEAD' and ref['symref_target'] == f'refs/heads/{branch}':
+                    if ref['name'] == 'HEAD' and ref['symref_target'] == branch_ref or ref['name'] == branch_ref:
                         states.append(RemoteState(ls_result.remote.url, branch, ref['oid'].hex))
                         break
             print(f'{i + 1}/{len(futures)}', end='\r')
