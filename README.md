@@ -18,7 +18,7 @@ If you are new to snapjaw, you will need to reinstall each of your addons manual
 
 ## Usage examples
 ```
-cd c:\games\wow\snapjaw
+cd c:\games\wow
 snapjaw install https://github.com/refaim/TrainerSkills
 ```
 ```
