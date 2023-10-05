@@ -251,8 +251,12 @@ def cmd_update(config: Config, args):
     if args.names:
         addons = [get_addon_from_config(config, name) for name in args.names]
     else:
-        states = [state for state in get_addon_states(config, args.addons_dir) if state.status == AddonStatus.Outdated]
-        addons = [config.addons_by_key[addon_key(state.addon)] for state in states]
+        addons = []
+        for state in get_addon_states(config, args.addons_dir):
+            if state.error is not None:
+                print(f'Error: {state.addon}: {state.error}')
+            elif state.status == AddonStatus.Outdated:
+                addons.append(config.addons_by_key[addon_key(state.addon)])
 
     if not addons:
         print('No addons to update found')
@@ -281,6 +285,7 @@ def cmd_status(config: Config, args):
         return humanize.naturaldate(dt)
 
     status_to_color = {
+        AddonStatus.Error: cr.Fore.RED,
         AddonStatus.Missing: cr.Fore.RED,
         AddonStatus.Modified: cr.Fore.MAGENTA,
         AddonStatus.Outdated: cr.Fore.YELLOW,
@@ -289,16 +294,28 @@ def cmd_status(config: Config, args):
         AddonStatus.UpToDate: cr.Fore.GREEN,
     }
 
+    has_error = any(state.error is not None for state in addon_states)
+
     table = []
     for state in addon_states:
         if args.verbose or state.status != AddonStatus.UpToDate:
-            table.append([state.addon,
-                          status_to_color[state.status] + state.status.value + cr.Fore.RESET,
-                          format_dt(state.released_at),
-                          format_dt(state.installed_at)])
-    cr.init()
+            columns = [
+                state.addon,
+                status_to_color[state.status] + state.status.value + cr.Fore.RESET,
+                format_dt(state.released_at),
+                format_dt(state.installed_at),
+            ]
+            if has_error:
+                columns.append(state.error or '')
+            table.append(columns)
+
     # TODO add updated_at, rename released_at
-    print(tabulate.tabulate(table, tablefmt='psql', headers=['addon', 'status', 'released_at', 'installed_at']))
+    headers = ['addon', 'status', 'released_at', 'installed_at']
+    if has_error:
+        headers.append('error')
+
+    cr.init()
+    print(tabulate.tabulate(table, tablefmt='psql', headers=headers))
     if not args.verbose:
         num_updated = Counter(s.status for s in addon_states)[AddonStatus.UpToDate]
         if num_updated > 0:
@@ -314,14 +331,16 @@ class AddonStatus(enum.Enum):
     Outdated = 'outdated'
     Untracked = 'untracked'
     Missing = 'missing'
+    Error = 'error'
 
 
 @dataclass
 class AddonState:
     addon: str
     status: AddonStatus
-    released_at: Optional[datetime] = None
-    installed_at: Optional[datetime] = None
+    error: Optional[str]
+    released_at: Optional[datetime]
+    installed_at: Optional[datetime]
 
 
 def get_addon_states(config: Config, addons_dir: str) -> list[AddonState]:
@@ -333,7 +352,11 @@ def get_addon_states(config: Config, addons_dir: str) -> list[AddonState]:
     requests = [mygit.RemoteStateRequest(addon.url, addon.branch) for addon in config.addons_by_key.values()]
     for state in mygit.fetch_states(requests):
         for addon in url_to_branch_to_addons[state.url][state.branch]:
-            if state.head_commit_hex is None:
+            comment = None
+            if state.error is not None:
+                status = AddonStatus.Error
+                comment = state.error
+            elif state.head_commit_hex is None:
                 status = AddonStatus.Unknown
             elif not signature.validate(os.path.join(addons_dir, addon.name), addon.checksum):
                 status = AddonStatus.Modified
@@ -342,16 +365,16 @@ def get_addon_states(config: Config, addons_dir: str) -> list[AddonState]:
             else:
                 status = AddonStatus.Outdated
             addon_key_to_state[addon_key(addon.name)] = AddonState(
-                addon.name, status, addon.released_at, addon.installed_at)
+                addon.name, status, comment, addon.released_at, addon.installed_at)
 
     for name in os.listdir(addons_dir):
         path = os.path.join(addons_dir, name)
         name_key = addon_key(name)
         if os.path.isdir(path) and not name.startswith('Blizzard_') and name_key not in addon_key_to_state:
-            addon_key_to_state[name_key] = AddonState(name, AddonStatus.Untracked, None, None)
+            addon_key_to_state[name_key] = AddonState(name, AddonStatus.Untracked, None, None, None)
 
     for name in set(config.addons_by_key.keys()) - set(addon_key_to_state.keys()):
-        addon_key_to_state[addon_key(name)] = AddonState(name, AddonStatus.Missing, None, None)
+        addon_key_to_state[addon_key(name)] = AddonState(name, AddonStatus.Missing, None, None, None)
 
     return list(sort_addons_dict(addon_key_to_state).values())
 
