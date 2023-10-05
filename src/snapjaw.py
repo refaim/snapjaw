@@ -164,7 +164,9 @@ def cmd_install(config: Config, args):
             elif path[0] == 'tree':
                 path = path[1:]
             branch_from_url = '/'.join(path)
-        path_string = '/'.join([author, repository]) + '.git'
+        path_string = '/'.join([author, repository])
+        if not path_string.endswith('.git'):
+            path_string += '.git'
 
     if args.branch and branch_from_url and args.branch != branch_from_url:
         raise CliError(f'requested branch {args.branch}, but found branch {branch_from_url} in repository URL')
