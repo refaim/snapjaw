@@ -99,13 +99,15 @@ class RemoteStateRequest:
 class RemoteState:
     url: str
     branch: str
-    head_commit_hex: str
+    head_commit_hex: Optional[str]
+    error: Optional[str]
 
 
 @dataclass
 class _RemoteLsResult:
     remote: pygit2.Remote
     refs: list[dict]
+    error: Optional[str]
 
 
 def fetch_states(requests: list[RemoteStateRequest]) -> list[RemoteState]:
@@ -119,18 +121,29 @@ def fetch_states(requests: list[RemoteStateRequest]) -> list[RemoteState]:
             remote_name_to_branches.setdefault(name, []).append(request.branch)
 
         def ls(remote: pygit2.Remote) -> _RemoteLsResult:
-            return _RemoteLsResult(remote, remote.ls_remotes())
+            try:
+                refs = remote.ls_remotes()
+                error = None
+            except pygit2.GitError as exception:
+                refs = []
+                error = str(exception)
+            return _RemoteLsResult(remote, refs, error)
 
         states = []
         futures = [ThreadPoolExecutor().submit(ls, remote) for remote in repo.remotes]
         for i, future in enumerate(as_completed(futures)):
             ls_result: _RemoteLsResult = future.result()
+
             for branch in remote_name_to_branches[ls_result.remote.name]:
-                branch_ref = f'refs/heads/{branch}'
-                for ref in ls_result.refs:
-                    if ref['name'] == 'HEAD' and ref['symref_target'] == branch_ref or ref['name'] == branch_ref:
-                        states.append(RemoteState(ls_result.remote.url, branch, ref['oid'].hex))
-                        break
+                if ls_result.error is not None:
+                    states.append(RemoteState(ls_result.remote.url, branch, None, ls_result.error))
+                else:
+                    branch_ref = f'refs/heads/{branch}'
+                    for ref in ls_result.refs:
+                        if ref['name'] == 'HEAD' and ref['symref_target'] == branch_ref or ref['name'] == branch_ref:
+                            states.append(RemoteState(ls_result.remote.url, branch, ref['oid'].hex, None))
+                            break
+
             print(f'{i + 1}/{len(futures)}', end='\r')
 
         return states
