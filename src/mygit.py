@@ -44,7 +44,11 @@ def clone(url: str, branch: Optional[str], path: str) -> RepositoryInfo:
 
 def _clone(url: str, branch: Optional[str], path: str, data_conn: Connection, error_conn: Connection):
     try:
-        repo: pygit2.Repository = pygit2.clone_repository(url, path, checkout_branch=branch, callbacks=_GitProgressCallbacks())
+        repo: pygit2.Repository = pygit2.clone_repository(url,
+                                                          path,
+                                                          depth=1,
+                                                          checkout_branch=branch,
+                                                          callbacks=_GitProgressCallbacks())
     except (pygit2.GitError, KeyError) as error:
         error_conn.send(GitError(str(error)))
         return
@@ -67,7 +71,7 @@ class _GitProgressCallbacks(pygit2.RemoteCallbacks):
     def sideband_progress(self, progress: str) -> None:
         print(progress, end='\r')
 
-    def transfer_progress(self, progress: pygit2.remote.TransferProgress) -> None:
+    def transfer_progress(self, progress: pygit2.remotes.TransferProgress) -> None:
         def print_progress(prefix: str, suffix: str, cur_count: int, max_count: int) -> None:
             eol = '\r'
             text = f'{prefix}: {math.ceil(cur_count / max_count * 100)}% ({cur_count}/{max_count}) {suffix}'
