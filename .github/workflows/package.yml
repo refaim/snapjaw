@@ -15,25 +15,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
           architecture: x64
 
-      - name: Cache Python packages
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~\AppData\Local\pip\Cache
-            ~\AppData\Local\pypoetry
-          key: python-deps
-
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install --upgrade poetry
-          poetry install --sync --no-root
+        run: uv sync
 
       - name: Cache Nuitka
         uses: actions/cache@v3
@@ -44,7 +36,7 @@ jobs:
 
       - name: Build
         run: |
-          poetry run nuitka --standalone --prefer-source-code --mingw64 --assume-yes-for-downloads --show-scons --output-dir=build --include-module=_cffi_backend src\snapjaw.py
+          uv run nuitka --standalone --prefer-source-code --mingw64 --assume-yes-for-downloads --show-scons --output-dir=build --include-module=_cffi_backend src\snapjaw.py
           New-Item -ItemType directory -Name snapjaw\snapjaw -Path build
           Get-Item -Path build\snapjaw.dist\* | Move-Item -Destination build\snapjaw\snapjaw
 

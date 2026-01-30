@@ -56,7 +56,7 @@ def _clone(url: str, branch: Optional[str], path: str, data_conn: Connection, er
     info = RepositoryInfo(
         workdir=repo.workdir,
         branch=repo.head.shorthand,
-        head_commit_hex=head.hex,
+        head_commit_hex=str(head.id),
         head_commit_time=datetime.fromtimestamp(head.commit_time))
     data_conn.send(info)
 
@@ -145,7 +145,7 @@ def fetch_states(requests: list[RemoteStateRequest]) -> list[RemoteState]:
                     branch_ref = f'refs/heads/{branch}'
                     for ref in ls_result.refs:
                         if ref['name'] == 'HEAD' and ref['symref_target'] == branch_ref or ref['name'] == branch_ref:
-                            states.append(RemoteState(ls_result.remote.url, branch, ref['oid'].hex, None))
+                            states.append(RemoteState(ls_result.remote.url, branch, str(ref['oid']), None))
                             break
 
             print(f'{i + 1}/{len(futures)}', end='\r')
