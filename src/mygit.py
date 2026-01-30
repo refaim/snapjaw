@@ -6,6 +6,7 @@ from hashlib import sha1
 from multiprocessing import Process, Pipe
 from multiprocessing.connection import Connection
 from tempfile import TemporaryDirectory
+from collections.abc import Iterator
 from typing import Optional
 
 import humanize
@@ -114,7 +115,7 @@ class _RemoteLsResult:
     error: Optional[str]
 
 
-def fetch_states(requests: list[RemoteStateRequest]) -> list[RemoteState]:
+def fetch_states(requests: list[RemoteStateRequest]) -> Iterator[RemoteState]:
     with TemporaryDirectory() as repo_dir:
         repo = pygit2.init_repository(repo_dir)
         remote_name_to_branches = {}
@@ -133,24 +134,20 @@ def fetch_states(requests: list[RemoteStateRequest]) -> list[RemoteState]:
                 error = str(exception)
             return _RemoteLsResult(remote, refs, error)
 
-        states = []
-        futures = [ThreadPoolExecutor().submit(ls, remote) for remote in repo.remotes]
-        for i, future in enumerate(as_completed(futures)):
-            ls_result: _RemoteLsResult = future.result()
+        with ThreadPoolExecutor() as executor:
+            futures = [executor.submit(ls, remote) for remote in repo.remotes]
+            for future in as_completed(futures):
+                ls_result: _RemoteLsResult = future.result()
 
-            for branch in remote_name_to_branches[ls_result.remote.name]:
-                if ls_result.error is not None:
-                    states.append(RemoteState(ls_result.remote.url, branch, None, ls_result.error))
-                else:
-                    branch_ref = f'refs/heads/{branch}'
-                    for ref in ls_result.refs:
-                        if ref['name'] == 'HEAD' and ref['symref_target'] == branch_ref or ref['name'] == branch_ref:
-                            states.append(RemoteState(ls_result.remote.url, branch, str(ref['oid']), None))
-                            break
-
-            print(f'{i + 1}/{len(futures)}', end='\r')
-
-        return states
+                for branch in remote_name_to_branches[ls_result.remote.name]:
+                    if ls_result.error is not None:
+                        yield RemoteState(ls_result.remote.url, branch, None, ls_result.error)
+                    else:
+                        branch_ref = f'refs/heads/{branch}'
+                        for ref in ls_result.refs:
+                            if ref['name'] == 'HEAD' and ref['symref_target'] == branch_ref or ref['name'] == branch_ref:
+                                yield RemoteState(ls_result.remote.url, branch, str(ref['oid']), None)
+                                break
 
 
 def _has_remote(repo: pygit2.Repository, name: str) -> bool:
