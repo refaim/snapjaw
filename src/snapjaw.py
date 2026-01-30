@@ -351,9 +351,13 @@ def get_addon_states(config: Config, addons_dir: str) -> list[AddonState]:
         url_to_branch_to_addons.setdefault(addon.url, {}).setdefault(addon.branch, []).append(addon)
 
     addon_key_to_state = {}
+    total_addons = len(config.addons_by_key)
+    processed = 0
     requests = [mygit.RemoteStateRequest(addon.url, addon.branch) for addon in config.addons_by_key.values()]
     for state in mygit.fetch_states(requests):
         for addon in url_to_branch_to_addons[state.url][state.branch]:
+            processed += 1
+            print(f'{processed}/{total_addons}', end='\r')
             comment = None
             if state.error is not None:
                 status = AddonStatus.Error
@@ -368,6 +372,7 @@ def get_addon_states(config: Config, addons_dir: str) -> list[AddonState]:
                 status = AddonStatus.Outdated
             addon_key_to_state[addon_key(addon.name)] = AddonState(
                 addon.name, status, comment, addon.released_at, addon.installed_at)
+    print()
 
     for name in os.listdir(addons_dir):
         path = os.path.join(addons_dir, name)
