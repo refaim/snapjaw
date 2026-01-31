@@ -1,25 +1,26 @@
-name: Package
+name: Build
 
 on:
   push:
     branches: [master]
   pull_request:
     branches: [master]
-  schedule:
-    - cron: '0 0 * * 0'
+
+permissions:
+  contents: write
 
 jobs:
-  package:
+  build:
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           architecture: x64
@@ -28,7 +29,7 @@ jobs:
         run: uv sync
 
       - name: Cache Nuitka
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~\AppData\Local\Nuitka
@@ -40,8 +41,32 @@ jobs:
           New-Item -ItemType directory -Name snapjaw\snapjaw -Path build
           Get-Item -Path build\snapjaw.dist\* | Move-Item -Destination build\snapjaw\snapjaw
 
-      - name: Upload
+      - name: Package
+        run: Compress-Archive -Path build\snapjaw\* -DestinationPath snapjaw.zip
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: snapjaw
-          path: build\snapjaw\
+          path: snapjaw.zip
+
+  release:
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: snapjaw
+
+      - name: Get date
+        id: date
+        run: echo "date=$(date +%Y.%m.%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.date.outputs.date }}.${{ github.run_number }}
+          name: ${{ steps.date.outputs.date }}.${{ github.run_number }}
+          files: snapjaw.zip
