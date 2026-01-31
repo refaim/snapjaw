@@ -1,6 +1,6 @@
 import hashlib
 import os
-from typing import Generator
+from collections.abc import Generator, Iterable
 
 _LATEST_VERSION = 2
 
@@ -15,25 +15,26 @@ def validate(dirpath: str, signature: str) -> bool:
 
 
 def _pack(checksum: str, version) -> str:
-    return f'{checksum}|{version}'
+    return f"{checksum}|{version}"
 
 
 def _unpack(signature: str) -> tuple[str, int]:
-    if '|' not in signature:
+    if "|" not in signature:
         return signature, 1
-    checksum, version = signature.split('|')
+    checksum, version = signature.split("|")
     return checksum, int(version)
 
 
 def _get_checksum(dirpath: str, version: int) -> str:
     if not os.path.isdir(dirpath):
         raise ValueError(f'Directory "{dirpath}" not found')
+    chunks: Iterable[str]
     if version == 1:
         chunks = sorted(_get_dir_chunks_v1(dirpath))
     elif version == 2:
         chunks = _get_dir_chunks_v2(dirpath)
     else:
-        raise RuntimeError('Invalid hash version')
+        raise RuntimeError("Invalid hash version")
     return _hash(chunks)
 
 
@@ -53,7 +54,7 @@ def _get_dir_chunks_v2(dirpath: str) -> Generator[str, None, None]:
 
 
 def _get_file_chunks(filepath: str) -> Generator[bytes, None, None]:
-    with open(filepath, 'rb') as filehandle:
+    with open(filepath, "rb") as filehandle:
         while True:
             data = filehandle.read(64 * 1024)
             if not data:
@@ -61,10 +62,10 @@ def _get_file_chunks(filepath: str) -> Generator[bytes, None, None]:
             yield data
 
 
-def _hash(chunks: Generator[bytes|str, None, None]) -> str:
+def _hash(chunks: Iterable[bytes | str]) -> str:
     hasher = hashlib.sha1()
     for chunk in chunks:
         if isinstance(chunk, str):
-            chunk = chunk.encode('utf-8')
+            chunk = chunk.encode("utf-8")
         hasher.update(chunk)
     return hasher.hexdigest()
