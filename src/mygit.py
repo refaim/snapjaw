@@ -26,7 +26,7 @@ class RepositoryInfo:
 
 # Workaround for https://github.com/libgit2/pygit2/issues/264
 def clone(url: str, branch: str | None, path: str) -> RepositoryInfo:
-    def make_pipe() -> tuple[Connection, Connection]:
+    def make_pipe():
         return Pipe()
 
     parent_data_conn, child_data_conn = make_pipe()
