@@ -1,19 +1,23 @@
 """Tests for mygit.py - Git operations wrapper.
 
-Tests focus on public API (clone, fetch_states) through behavior verification.
-Internal implementation details are not tested directly.
+Tests cover both public API (clone, fetch_states) and internal helpers
+(_clone, _GitProgressCallbacks, _has_remote) to ensure complete coverage.
 """
 
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pygit2
 import pytest
 
 from mygit import (
     GitError,
-    RemoteState,
     RemoteStateRequest,
     RepositoryInfo,
+    _clone,
+    _GitProgressCallbacks,
+    _has_remote,
     clone,
     fetch_states,
 )
@@ -66,15 +70,7 @@ class TestClone:
 class TestFetchStates:
     """Tests for fetch_states() - checking remote repository states."""
 
-    @pytest.fixture
-    def mock_tmpdir_context(self):
-        """Context manager for mocking TemporaryDirectory."""
-        mock = MagicMock()
-        mock.__enter__ = MagicMock(return_value="/tmp/repo")
-        mock.__exit__ = MagicMock(return_value=False)
-        return patch("mygit.TemporaryDirectory", return_value=mock)
-
-    def test_success_returns_commit_hash(self, mock_remote, mock_pygit2_repo, mock_tmpdir_context):
+    def test_success_returns_commit_hash(self, mock_remote, mock_pygit2_repo, fetch_states_patches):
         """Successful fetch returns commit hash for branch."""
         remote = mock_remote(
             "abc123",
@@ -83,14 +79,7 @@ class TestFetchStates:
         )
         mock_pygit2_repo.remotes.__iter__ = MagicMock(return_value=iter([remote]))
 
-        with (
-            patch("mygit.pygit2.init_repository", return_value=mock_pygit2_repo),
-            patch("mygit.pygit2.GitError", Exception),
-            patch("mygit.sha1") as mock_sha1,
-            mock_tmpdir_context,
-        ):
-            mock_sha1.return_value.hexdigest.return_value = "abc123"
-
+        with fetch_states_patches():
             requests = [RemoteStateRequest("https://github.com/test/repo.git", "master")]
             states = list(fetch_states(requests))
 
@@ -98,7 +87,7 @@ class TestFetchStates:
         assert states[0].head_commit_hex == "deadbeef"
         assert states[0].error is None
 
-    def test_head_symref_resolves_branch(self, mock_remote, mock_pygit2_repo, mock_tmpdir_context):
+    def test_head_symref_resolves_branch(self, mock_remote, mock_pygit2_repo, fetch_states_patches):
         """HEAD symref pointing to branch returns correct commit."""
         remote = mock_remote(
             "abc123",
@@ -107,21 +96,14 @@ class TestFetchStates:
         )
         mock_pygit2_repo.remotes.__iter__ = MagicMock(return_value=iter([remote]))
 
-        with (
-            patch("mygit.pygit2.init_repository", return_value=mock_pygit2_repo),
-            patch("mygit.pygit2.GitError", Exception),
-            patch("mygit.sha1") as mock_sha1,
-            mock_tmpdir_context,
-        ):
-            mock_sha1.return_value.hexdigest.return_value = "abc123"
-
+        with fetch_states_patches():
             requests = [RemoteStateRequest("https://github.com/test/repo.git", "main")]
             states = list(fetch_states(requests))
 
         assert len(states) == 1
         assert states[0].head_commit_hex == "cafebabe"
 
-    def test_git_error_returns_error_state(self, mock_remote, mock_pygit2_repo, mock_tmpdir_context):
+    def test_git_error_returns_error_state(self, mock_remote, mock_pygit2_repo, fetch_states_patches):
         """Git error returns state with error message, no commit."""
         remote = mock_remote(
             "abc123",
@@ -130,14 +112,7 @@ class TestFetchStates:
         )
         mock_pygit2_repo.remotes.__iter__ = MagicMock(return_value=iter([remote]))
 
-        with (
-            patch("mygit.pygit2.init_repository", return_value=mock_pygit2_repo),
-            patch("mygit.pygit2.GitError", Exception),
-            patch("mygit.sha1") as mock_sha1,
-            mock_tmpdir_context,
-        ):
-            mock_sha1.return_value.hexdigest.return_value = "abc123"
-
+        with fetch_states_patches():
             requests = [RemoteStateRequest("https://github.com/test/repo.git", "master")]
             states = list(fetch_states(requests))
 
@@ -145,24 +120,32 @@ class TestFetchStates:
         assert states[0].error == "connection refused"
         assert states[0].head_commit_hex is None
 
-    def test_existing_remote_reused(self, mock_remote, mock_pygit2_repo, mock_tmpdir_context):
+    def test_existing_remote_reused(self, mock_remote, mock_pygit2_repo, fetch_states_patches):
         """Existing remote is reused, not recreated."""
         remote = mock_remote("abc123", "https://github.com/test/repo.git", refs=[])
         mock_pygit2_repo.remotes.__iter__ = MagicMock(return_value=iter([remote]))
         mock_pygit2_repo.remotes.__getitem__ = MagicMock(return_value=remote)
 
-        with (
-            patch("mygit.pygit2.init_repository", return_value=mock_pygit2_repo),
-            patch("mygit.pygit2.GitError", Exception),
-            patch("mygit.sha1") as mock_sha1,
-            mock_tmpdir_context,
-        ):
-            mock_sha1.return_value.hexdigest.return_value = "abc123"
-
+        with fetch_states_patches():
             requests = [RemoteStateRequest("https://github.com/test/repo.git", "master")]
             list(fetch_states(requests))
 
         mock_pygit2_repo.remotes.create.assert_not_called()
+
+    def test_branch_not_found_in_refs(self, mock_remote, mock_pygit2_repo, fetch_states_patches):
+        """When requested branch is not in refs, no state is yielded for it."""
+        remote = mock_remote(
+            "abc123",
+            "https://github.com/test/repo.git",
+            refs=[{"name": "refs/heads/other-branch", "symref_target": "", "oid": "deadbeef"}],
+        )
+        mock_pygit2_repo.remotes.__iter__ = MagicMock(return_value=iter([remote]))
+
+        with fetch_states_patches():
+            requests = [RemoteStateRequest("https://github.com/test/repo.git", "master")]
+            states = list(fetch_states(requests))
+
+        assert len(states) == 0
 
 
 class TestCloneInternalProcess:
@@ -174,7 +157,7 @@ class TestCloneInternalProcess:
 
     def test_success_sends_repository_info(self):
         """Successful clone sends RepositoryInfo through data connection."""
-        mock_commit = MagicMock()
+        mock_commit = MagicMock(spec=pygit2.Commit)
         mock_commit.id = "abc123"
         mock_commit.commit_time = 1704067200  # 2024-01-01 00:00:00 UTC
 
@@ -190,11 +173,9 @@ class TestCloneInternalProcess:
         data_conn = MagicMock()
         error_conn = MagicMock()
 
-        from mygit import _clone
-
         with patch("mygit.pygit2") as mock_pygit2:
             mock_pygit2.clone_repository.return_value = mock_repo
-            mock_pygit2.Commit = type(mock_commit)
+            mock_pygit2.Commit = pygit2.Commit
             _clone("https://github.com/test/repo.git", "master", "/tmp/repo", data_conn, error_conn)
 
         data_conn.send.assert_called_once()
@@ -208,11 +189,9 @@ class TestCloneInternalProcess:
         data_conn = MagicMock()
         error_conn = MagicMock()
 
-        from mygit import _clone
-
         with patch("mygit.pygit2") as mock_pygit2:
-            mock_pygit2.GitError = Exception
-            mock_pygit2.clone_repository.side_effect = Exception("auth failed")
+            mock_pygit2.GitError = pygit2.GitError
+            mock_pygit2.clone_repository.side_effect = pygit2.GitError("auth failed")
             _clone("https://github.com/test/repo.git", None, "/tmp/repo", data_conn, error_conn)
 
         error_conn.send.assert_called_once()
@@ -225,10 +204,8 @@ class TestCloneInternalProcess:
         data_conn = MagicMock()
         error_conn = MagicMock()
 
-        from mygit import _clone
-
         with patch("mygit.pygit2") as mock_pygit2:
-            mock_pygit2.GitError = Exception
+            mock_pygit2.GitError = pygit2.GitError
             mock_pygit2.clone_repository.side_effect = KeyError("bad branch")
             _clone("https://github.com/test/repo.git", "nonexistent", "/tmp/repo", data_conn, error_conn)
 
@@ -244,7 +221,6 @@ class TestGitProgressCallbacks:
 
     def test_sideband_progress_prints(self, capsys):
         """sideband_progress prints message."""
-        from mygit import _GitProgressCallbacks
 
         cb = _GitProgressCallbacks()
         cb.sideband_progress("remote: Counting objects")
@@ -253,9 +229,6 @@ class TestGitProgressCallbacks:
 
     def test_transfer_progress_receiving_objects(self, capsys):
         """Receiving objects shows percentage."""
-        from types import SimpleNamespace
-
-        from mygit import _GitProgressCallbacks
 
         cb = _GitProgressCallbacks()
         progress = SimpleNamespace(
@@ -271,9 +244,6 @@ class TestGitProgressCallbacks:
 
     def test_transfer_progress_objects_done(self, capsys):
         """Completed objects shows 'done'."""
-        from types import SimpleNamespace
-
-        from mygit import _GitProgressCallbacks
 
         cb = _GitProgressCallbacks()
         progress = SimpleNamespace(
@@ -289,9 +259,6 @@ class TestGitProgressCallbacks:
 
     def test_transfer_progress_indexing_deltas(self, capsys):
         """Indexing deltas shows percentage after objects done."""
-        from types import SimpleNamespace
-
-        from mygit import _GitProgressCallbacks
 
         cb = _GitProgressCallbacks()
         cb._objects_done = True
@@ -308,9 +275,6 @@ class TestGitProgressCallbacks:
 
     def test_transfer_progress_deltas_done(self, capsys):
         """Completed deltas shows 'done'."""
-        from types import SimpleNamespace
-
-        from mygit import _GitProgressCallbacks
 
         cb = _GitProgressCallbacks()
         cb._objects_done = True
@@ -327,9 +291,6 @@ class TestGitProgressCallbacks:
 
     def test_transfer_progress_zero_deltas_skipped(self, capsys):
         """Zero total deltas produces no output."""
-        from types import SimpleNamespace
-
-        from mygit import _GitProgressCallbacks
 
         cb = _GitProgressCallbacks()
         cb._objects_done = True
@@ -346,9 +307,6 @@ class TestGitProgressCallbacks:
 
     def test_transfer_progress_after_all_done_no_output(self, capsys):
         """After both objects and deltas done, no output."""
-        from types import SimpleNamespace
-
-        from mygit import _GitProgressCallbacks
 
         cb = _GitProgressCallbacks()
         cb._objects_done = True
@@ -370,7 +328,6 @@ class TestHasRemote:
 
     def test_remote_exists(self):
         """Returns True when remote exists."""
-        from mygit import _has_remote
 
         repo = MagicMock()
         repo.remotes.__getitem__ = MagicMock(return_value=MagicMock())
@@ -378,44 +335,7 @@ class TestHasRemote:
 
     def test_remote_not_exists(self):
         """Returns False when remote doesn't exist."""
-        from mygit import _has_remote
 
         repo = MagicMock()
         repo.remotes.__getitem__ = MagicMock(side_effect=KeyError)
         assert _has_remote(repo, "origin") is False
-
-
-class TestDataClasses:
-    """Tests for data classes - ensure they hold expected data."""
-
-    def test_repository_info_fields(self):
-        """RepositoryInfo stores all required fields."""
-        info = RepositoryInfo(
-            workdir="/tmp/repo/",
-            branch="master",
-            head_commit_hex="abc123",
-            head_commit_time=datetime(2024, 1, 1),
-        )
-        assert info.workdir == "/tmp/repo/"
-        assert info.branch == "master"
-        assert info.head_commit_hex == "abc123"
-
-    def test_remote_state_fields(self):
-        """RemoteState stores URL, branch, commit, and error."""
-        state = RemoteState(
-            url="https://github.com/test/repo.git",
-            branch="master",
-            head_commit_hex="abc123",
-            error=None,
-        )
-        assert state.url == "https://github.com/test/repo.git"
-        assert state.error is None
-
-    def test_remote_state_request_fields(self):
-        """RemoteStateRequest stores URL and branch."""
-        request = RemoteStateRequest(
-            url="https://github.com/test/repo.git",
-            branch="master",
-        )
-        assert request.url == "https://github.com/test/repo.git"
-        assert request.branch == "master"

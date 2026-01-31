@@ -1,5 +1,9 @@
 # snapjaw: Vanilla World of Warcraft AddOn manager
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0) [![CodeQL](https://github.com/refaim/snapjaw/actions/workflows/codeql.yml/badge.svg?branch=master)](https://github.com/refaim/snapjaw/actions/workflows/codeql.yml) [![Package](https://github.com/refaim/snapjaw/actions/workflows/package.yml/badge.svg)](https://github.com/refaim/snapjaw/actions/workflows/package.yml)
+[![CI](https://github.com/refaim/snapjaw/actions/workflows/ci.yml/badge.svg)](https://github.com/refaim/snapjaw/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/refaim/snapjaw/graph/badge.svg)](https://codecov.io/gh/refaim/snapjaw)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/release/python-3120/)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![GitHub release](https://img.shields.io/github/v/release/refaim/snapjaw)](https://github.com/refaim/snapjaw/releases/latest)
 
 ## Features
 - Support for Git repositories as addon sources
@@ -70,5 +74,5 @@ snapjaw update ShaguTweaks
 ```
 
 ## Requirements for developers
-- [Python 3.10](https://www.python.org)
+- [Python 3.12](https://www.python.org)
 - [uv](https://docs.astral.sh/uv/)

@@ -158,11 +158,11 @@ def cmd_install(config: Config, args):
         author = path.pop(0)
         repository = path.pop(0)
         if path:
-            if path[0] == "-" and path[1] == "tree":
-                path = path[2:]
+            if path[0] == "-" and len(path) > 1 and path[1] == "tree":
+                branch_from_url = "/".join(path[2:])
             elif path[0] == "tree":
-                path = path[1:]
-            branch_from_url = "/".join(path)
+                branch_from_url = "/".join(path[1:])
+            # Ignore non-tree paths (blob, commits, etc.)
         path_string = "/".join([author, repository])
         if not path_string.endswith(".git"):
             path_string += ".git"
@@ -318,7 +318,9 @@ def cmd_status(config: Config, args):
     if not args.verbose:
         num_updated = Counter(s.status for s in addon_states)[AddonStatus.UpToDate]
         if num_updated > 0:
-            msg = f"{num_updated}{' other' if table else ''} addons are up to date"
+            other = " other" if table else ""
+            noun = "addon is" if num_updated == 1 else "addons are"
+            msg = f"{num_updated}{other} {noun} up to date"
             print(cr.Fore.GREEN + msg + cr.Fore.RESET)
     cr.deinit()
 

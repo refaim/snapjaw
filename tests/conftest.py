@@ -1,7 +1,7 @@
 """Shared fixtures for snapjaw tests."""
 
 from datetime import datetime
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pygit2
 import pytest
@@ -79,6 +79,37 @@ def make_toc_addon(tmp_path):
 
 
 @pytest.fixture
+def mock_tmpdir_context():
+    """Context manager patch for mocking TemporaryDirectory."""
+    mock = MagicMock()
+    mock.__enter__ = MagicMock(return_value="/tmp/repo")
+    mock.__exit__ = MagicMock(return_value=False)
+    return patch("mygit.TemporaryDirectory", return_value=mock)
+
+
+@pytest.fixture
+def fetch_states_patches(mock_pygit2_repo, mock_tmpdir_context):
+    """Combined patches for fetch_states tests.
+
+    Returns a context manager with mocked pygit2 repo, GitError, sha1, and tmpdir.
+    The sha1 mock is configured to return "abc123" as hexdigest.
+    """
+    from contextlib import ExitStack, contextmanager
+
+    @contextmanager
+    def _patches():
+        with ExitStack() as stack:
+            stack.enter_context(patch("mygit.pygit2.init_repository", return_value=mock_pygit2_repo))
+            stack.enter_context(patch("mygit.pygit2.GitError", pygit2.GitError))
+            mock_sha1 = stack.enter_context(patch("mygit.sha1"))
+            mock_sha1.return_value.hexdigest.return_value = "abc123"
+            stack.enter_context(mock_tmpdir_context)
+            yield
+
+    return _patches
+
+
+@pytest.fixture
 def mock_pygit2_repo():
     """Create a mocked pygit2.Repository."""
     repo = MagicMock()
@@ -103,3 +134,56 @@ def mock_remote():
         return remote
 
     return _mock_remote
+
+
+@pytest.fixture
+def mock_install_env(tmp_path, monkeypatch, fixed_now):
+    """Setup mocked environment for install_addon tests.
+
+    Returns a context manager that sets up repo_dir, mocks clone/TemporaryDirectory/signature,
+    and provides addons_dir and config.
+    """
+    from contextlib import contextmanager
+
+    from mygit import RepositoryInfo
+    from snapjaw import Config
+
+    @contextmanager
+    def _setup(*, trailing_slash=True):
+        addons_dir = tmp_path / "Addons"
+        addons_dir.mkdir(exist_ok=True)
+
+        repo_dir = tmp_path / "repo"
+        repo_dir.mkdir(exist_ok=True)
+
+        workdir = str(repo_dir) + ("/" if trailing_slash else "")
+
+        repo_info = RepositoryInfo(
+            workdir=workdir,
+            branch="master",
+            head_commit_hex="abc123",
+            head_commit_time=fixed_now,
+        )
+        monkeypatch.setattr("snapjaw.mygit.clone", lambda url, branch, path: repo_info)
+
+        mock_tmpdir = MagicMock()
+        mock_tmpdir.__enter__ = MagicMock(return_value=str(repo_dir))
+        mock_tmpdir.__exit__ = MagicMock(return_value=False)
+        monkeypatch.setattr("snapjaw.TemporaryDirectory", lambda: mock_tmpdir)
+        monkeypatch.setattr("snapjaw.signature.calculate", lambda path: "sig|2")
+
+        config = Config(addons_by_key={})
+        config._loaded_from = str(tmp_path / "snapjaw.json")
+
+        class Env:
+            pass
+
+        env = Env()
+        env.addons_dir = addons_dir
+        env.repo_dir = repo_dir
+        env.config = config
+        env.repo_info = repo_info
+
+        yield env
+
+    return _setup
