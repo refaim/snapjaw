@@ -1,4 +1,4 @@
-name: Build
+name: CI
 
 on:
   push:
@@ -64,7 +64,7 @@ jobs:
         with:
           path: |
             ~\AppData\Local\Nuitka
-          key: nuitka
+          key: nuitka-py3.12-${{ hashFiles('uv.lock') }}
 
       - name: Build
         run: |
