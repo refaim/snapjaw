@@ -1,14 +1,13 @@
 """Tests for snapjaw CLI commands (install, remove, update, status)."""
 
 import json
-import os
 import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
-from mygit import RepositoryInfo
+from mygit import GitError
 from snapjaw import (
     AddonState,
     AddonStatus,
@@ -21,6 +20,7 @@ from snapjaw import (
     remove_addon_dir,
     run_command,
 )
+from toc import Addon
 
 
 class TestRunCommand:
@@ -40,14 +40,14 @@ class TestRunCommand:
         args = SimpleNamespace(addons_dir=str(tmp_path))
         run_command(callback, True, args)
         callback.assert_called_once()
-        assert not os.path.exists(tmp_path / "snapjaw.backup.json")
+        assert not (tmp_path / "snapjaw.backup.json").exists()
 
     def test_write_saves_config(self, tmp_path):
         """Write command saves config after execution."""
         callback = MagicMock()
         args = SimpleNamespace(addons_dir=str(tmp_path))
         run_command(callback, False, args)
-        assert os.path.exists(tmp_path / "snapjaw.json")
+        assert (tmp_path / "snapjaw.json").exists()
 
     def test_write_creates_backup(self, tmp_path):
         """Write command creates backup of existing config."""
@@ -56,7 +56,7 @@ class TestRunCommand:
         callback = MagicMock()
         args = SimpleNamespace(addons_dir=str(tmp_path))
         run_command(callback, False, args)
-        assert os.path.exists(tmp_path / "snapjaw.backup.json")
+        assert (tmp_path / "snapjaw.backup.json").exists()
 
     def test_error_restores_backup(self, tmp_path, make_addon):
         """On error, backup is restored."""
@@ -76,94 +76,94 @@ class TestRunCommand:
             restored = json.load(f)
         assert restored["addons_by_key"] == {}
 
+    def test_read_only_error_does_not_restore_backup(self, tmp_path):
+        """On error in read-only mode, no backup restoration is attempted."""
+        config_path = tmp_path / "snapjaw.json"
+        config_path.write_text('{"addons_by_key": {}}')
+
+        def bad_callback(config, args):
+            raise RuntimeError("boom")
+
+        args = SimpleNamespace(addons_dir=str(tmp_path))
+        with pytest.raises(RuntimeError, match="boom"):
+            run_command(bad_callback, True, args)
+
+        # Config unchanged, no backup was created or restored
+        assert not (tmp_path / "snapjaw.backup.json").exists()
+
 
 class TestInstallAddon:
     """Tests for install_addon() function."""
 
-    def test_success(self, tmp_path, monkeypatch, fixed_now):
+    def test_success(self, mock_install_env):
         """Successful install copies addon and updates config."""
-        addons_dir = tmp_path / "Addons"
-        addons_dir.mkdir()
+        with mock_install_env() as env:
+            addon_dir = env.repo_dir / "MyAddon"
+            addon_dir.mkdir()
+            (addon_dir / "MyAddon.toc").write_text("## Interface: 11200\n")
+            (addon_dir / "init.lua").write_text("-- addon code")
 
-        repo_dir = tmp_path / "repo"
-        repo_dir.mkdir()
-        addon_dir = repo_dir / "MyAddon"
-        addon_dir.mkdir()
-        (addon_dir / "MyAddon.toc").write_text("## Interface: 11200\n")
-        (addon_dir / "init.lua").write_text("-- addon code")
+            install_addon(env.config, "https://github.com/test/repo.git", "master", str(env.addons_dir))
 
-        repo_info = RepositoryInfo(
-            workdir=str(repo_dir) + "/",
-            branch="master",
-            head_commit_hex="abc123",
-            head_commit_time=fixed_now,
-        )
-        monkeypatch.setattr("snapjaw.mygit.clone", lambda url, branch, path: repo_info)
-        mock_tmpdir = MagicMock()
-        mock_tmpdir.__enter__ = MagicMock(return_value=str(repo_dir))
-        mock_tmpdir.__exit__ = MagicMock(return_value=False)
-        monkeypatch.setattr("snapjaw.TemporaryDirectory", lambda: mock_tmpdir)
-        monkeypatch.setattr("snapjaw.signature.calculate", lambda path: "sig|2")
-
-        config = Config(addons_by_key={})
-        config._loaded_from = str(tmp_path / "snapjaw.json")
-        install_addon(config, "https://github.com/test/repo.git", "master", str(addons_dir))
-
-        assert "myaddon" in config.addons_by_key
-        assert os.path.exists(addons_dir / "MyAddon" / "init.lua")
+            assert "myaddon" in env.config.addons_by_key
+            assert (env.addons_dir / "MyAddon" / "init.lua").exists()
 
     def test_git_error_raises_cli_error(self, tmp_path, monkeypatch):
         """Git clone failure raises CliError."""
-        from mygit import GitError
-
         monkeypatch.setattr("snapjaw.mygit.clone", MagicMock(side_effect=GitError("auth failed")))
 
         config = Config(addons_by_key={})
         with pytest.raises(CliError, match="auth failed"):
             install_addon(config, "https://github.com/test/repo.git", None, str(tmp_path))
 
-    def test_no_addons_found_raises_error(self, tmp_path, monkeypatch, fixed_now):
+    def test_no_addons_found_raises_error(self, mock_install_env, monkeypatch):
         """No vanilla addons in repo raises CliError."""
-        repo_info = RepositoryInfo(
-            workdir=str(tmp_path) + "/", branch="master", head_commit_hex="abc", head_commit_time=fixed_now
-        )
-        monkeypatch.setattr("snapjaw.mygit.clone", lambda url, branch, path: repo_info)
-        monkeypatch.setattr("snapjaw.toc.find_addons", lambda workdir, version: iter([]))
+        with mock_install_env() as env:
+            monkeypatch.setattr("snapjaw.toc.find_addons", lambda workdir, version: iter([]))
 
-        config = Config(addons_by_key={})
-        with pytest.raises(CliError, match="no vanilla addons found"):
-            install_addon(config, "https://github.com/test/repo.git", None, str(tmp_path))
+            with pytest.raises(CliError, match="no vanilla addons found"):
+                install_addon(env.config, "https://github.com/test/repo.git", None, str(env.addons_dir))
 
-    def test_copies_readme_from_root(self, tmp_path, monkeypatch, fixed_now):
+    def test_copies_readme_from_root(self, mock_install_env):
         """Readme from repo root is copied to addon directory."""
-        addons_dir = tmp_path / "Addons"
-        addons_dir.mkdir()
+        with mock_install_env() as env:
+            addon_dir = env.repo_dir / "MyAddon"
+            addon_dir.mkdir()
+            (addon_dir / "MyAddon.toc").write_text("## Interface: 11200\n")
+            (env.repo_dir / "README.txt").write_text("read me")
 
-        repo_dir = tmp_path / "repo"
-        repo_dir.mkdir()
-        addon_dir = repo_dir / "MyAddon"
-        addon_dir.mkdir()
-        (addon_dir / "MyAddon.toc").write_text("## Interface: 11200\n")
-        (repo_dir / "README.txt").write_text("read me")
+            install_addon(env.config, "https://github.com/test/repo.git", "master", str(env.addons_dir))
 
-        repo_info = RepositoryInfo(
-            workdir=str(repo_dir) + "/",
-            branch="master",
-            head_commit_hex="abc123",
-            head_commit_time=fixed_now,
-        )
-        monkeypatch.setattr("snapjaw.mygit.clone", lambda url, branch, path: repo_info)
-        mock_tmpdir = MagicMock()
-        mock_tmpdir.__enter__ = MagicMock(return_value=str(repo_dir))
-        mock_tmpdir.__exit__ = MagicMock(return_value=False)
-        monkeypatch.setattr("snapjaw.TemporaryDirectory", lambda: mock_tmpdir)
-        monkeypatch.setattr("snapjaw.signature.calculate", lambda path: "sig|2")
+            assert (env.addons_dir / "MyAddon" / "README.txt").read_text() == "read me"
 
-        config = Config(addons_by_key={})
-        config._loaded_from = str(tmp_path / "snapjaw.json")
-        install_addon(config, "https://github.com/test/repo.git", "master", str(addons_dir))
+    def test_addon_in_repo_root_skips_readme_copy(self, mock_install_env, monkeypatch):
+        """When addon is in repo root (workdir == addon.path), readme copy is skipped."""
+        with mock_install_env(trailing_slash=False) as env:
+            (env.repo_dir / "MyAddon.toc").write_text("## Interface: 11200\n")
+            (env.repo_dir / "README.txt").write_text("root readme")
+            # Mock find_addons to return addon with path equal to workdir
+            monkeypatch.setattr(
+                "snapjaw.toc.find_addons", lambda workdir, version: iter([Addon("MyAddon", str(env.repo_dir))])
+            )
 
-        assert (addons_dir / "MyAddon" / "README.txt").read_text() == "read me"
+            install_addon(env.config, "https://github.com/test/repo.git", "master", str(env.addons_dir))
+
+            # README exists because it was copied with the addon (copytree), not from root copy logic
+            assert (env.addons_dir / "MyAddon" / "README.txt").read_text() == "root readme"
+
+    def test_existing_readme_not_overwritten(self, mock_install_env):
+        """Readme already in addon directory is not overwritten by root copy."""
+        with mock_install_env() as env:
+            addon_dir = env.repo_dir / "MyAddon"
+            addon_dir.mkdir()
+            (addon_dir / "MyAddon.toc").write_text("## Interface: 11200\n")
+            (addon_dir / "README.txt").write_text("addon readme")
+            (env.repo_dir / "README.txt").write_text("root readme")
+
+            install_addon(env.config, "https://github.com/test/repo.git", "master", str(env.addons_dir))
+
+            # Addon's own readme is preserved, not overwritten by root readme
+            assert (env.addons_dir / "MyAddon" / "README.txt").read_text() == "addon readme"
 
 
 class TestCmdRemove:
@@ -337,7 +337,7 @@ class TestCmdStatus:
         cmd_status(config, args)
         out = capsys.readouterr().out
         assert "MyAddon" in out
-        assert "1 other addons are up to date" in out
+        assert "1 other addon is up to date" in out
 
     def test_verbose_shows_all_addons(self, tmp_path, monkeypatch, fixed_now, capsys):
         """Verbose mode shows up-to-date addons in table."""

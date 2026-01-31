@@ -59,6 +59,18 @@ class TestUrlParsing:
                 "https://gitlab.com/Artur91425/GrimoireKeeper.git",
                 "master",
             ),
+            # GitLab URL without -/ prefix (old format)
+            (
+                "https://gitlab.com/Artur91425/GrimoireKeeper/tree/master",
+                "https://gitlab.com/Artur91425/GrimoireKeeper.git",
+                "master",
+            ),
+            # GitHub URL with non-tree path (e.g. blob link) - path is ignored
+            (
+                "https://github.com/refaim/MissingCrafts/blob/master",
+                "https://github.com/refaim/MissingCrafts.git",
+                None,
+            ),
             # Non-GitHub/GitLab URL passed through
             (
                 "https://custom.server/repo.git",
@@ -72,6 +84,8 @@ class TestUrlParsing:
             "github_with_branch",
             "gitlab_simple",
             "gitlab_with_branch",
+            "gitlab_with_branch_old_format",
+            "github_with_non_tree_path",
             "custom_url_passthrough",
         ],
     )
@@ -85,6 +99,15 @@ class TestUrlParsing:
         """Explicit --branch argument is used when URL has no branch."""
         repo_url, branch = run_install(
             "https://github.com/fusionpit/QuestFrameFixer",
+            branch="1.12.1",
+        )
+        assert repo_url == "https://github.com/fusionpit/QuestFrameFixer.git"
+        assert branch == "1.12.1"
+
+    def test_matching_branch_in_url_and_arg(self, run_install):
+        """Matching branch in URL and --branch argument works fine."""
+        repo_url, branch = run_install(
+            "https://github.com/fusionpit/QuestFrameFixer/tree/1.12.1",
             branch="1.12.1",
         )
         assert repo_url == "https://github.com/fusionpit/QuestFrameFixer.git"

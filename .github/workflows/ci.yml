@@ -38,7 +38,19 @@ jobs:
         run: uv run mypy src/
 
       - name: Tests with coverage
-        run: uv run pytest --cov=src --cov-report=term-missing --cov-fail-under=100
+        run: uv run pytest -m "" --cov=src --cov-branch --cov-report=term-missing --cov-report=xml --cov-fail-under=100 --junitxml=junit.xml -o junit_family=legacy
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.xml
+
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   build:
     needs: check
