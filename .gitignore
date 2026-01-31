@@ -1,3 +1,17 @@
 /.idea
 /build
 /dist
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# Coverage
+.coverage
+htmlcov/
+coverage.xml
+
+# pytest
+.pytest_cache/

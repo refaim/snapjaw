@@ -14,12 +14,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Optional
 
 import colorama as cr
 import humanize
 import tabulate
-from dataclasses_json import dataclass_json
+from dataclasses_json import DataClassJsonMixin
 
 import mygit
 import signature
@@ -30,36 +29,35 @@ class CliError(RuntimeError):
     pass
 
 
-@dataclass_json
 @dataclass
-class ConfigAddon:
+class ConfigAddon(DataClassJsonMixin):
     name: str
     url: str
     branch: str
     commit: str
     released_at: datetime
     installed_at: datetime
-    checksum: Optional[str] = None
+    checksum: str | None = None
 
 
-@dataclass_json
 @dataclass
-class Config:
+class Config(DataClassJsonMixin):
     addons_by_key: dict[str, ConfigAddon]
+    _loaded_from: str = ""
 
     @staticmethod
-    def load_or_setup(path: str):
+    def load_or_setup(path: str) -> "Config":
         if os.path.exists(path):
             with open(path) as config_file:
                 config = Config.from_json(config_file.read())
         else:
             config = Config(addons_by_key={})
-        setattr(config, '_loaded_from', path)
+        config._loaded_from = path
         return config
 
     def save(self):
         self.addons_by_key = sort_addons_dict(self.addons_by_key)
-        with open(getattr(self, '_loaded_from'), 'w') as config_file:
+        with open(self._loaded_from, "w") as config_file:
             json.dump(json.loads(self.to_json()), config_file, indent=4)
 
     @staticmethod
@@ -73,7 +71,7 @@ def main():
     try:
         cmd_args.callback(cmd_args)
     except CliError as error:
-        print(f'error: {error}', file=sys.stderr)
+        print(f"error: {error}", file=sys.stderr)
         return 1
     return 0
 
@@ -84,38 +82,39 @@ def parse_args():
     wow_dir = None
     cwd = Path.cwd()
     while wow_dir is None and cwd != cwd.parent:
-        if cwd.joinpath('WoW.exe').is_file():
+        if cwd.joinpath("WoW.exe").is_file():
             wow_dir = cwd
         cwd = cwd.parent
 
     addons_dir = None
     if wow_dir is not None:
-        addons_dir = wow_dir.joinpath('Interface', 'Addons')
+        addons_dir = wow_dir.joinpath("Interface", "Addons")
 
     parser.add_argument(
-        '--addons-dir',
+        "--addons-dir",
         required=False,
         type=arg_type_dir,
         default=addons_dir,
-        help='optional path to Interface\\Addons directory')
+        help="optional path to Interface\\Addons directory",
+    )
 
     subparsers = parser.add_subparsers(required=True)
 
-    install = subparsers.add_parser('install', help='install new addon(s)')
-    install.add_argument('url', type=str, help='url to git repository')
-    install.add_argument('--branch', type=str, help='specific git branch to use')
+    install = subparsers.add_parser("install", help="install new addon(s)")
+    install.add_argument("url", type=str, help="url to git repository")
+    install.add_argument("--branch", type=str, help="specific git branch to use")
     install.set_defaults(callback=functools.partial(run_command, cmd_install, False))
 
-    remove = subparsers.add_parser('remove', help='remove installed addon')
-    remove.add_argument('names', help='addon name', nargs='+')
+    remove = subparsers.add_parser("remove", help="remove installed addon")
+    remove.add_argument("names", help="addon name", nargs="+")
     remove.set_defaults(callback=functools.partial(run_command, cmd_remove, False))
 
-    update = subparsers.add_parser('update', help='update installed addon(s)')
-    update.add_argument('names', help='addon name', nargs='*')
+    update = subparsers.add_parser("update", help="update installed addon(s)")
+    update.add_argument("names", help="addon name", nargs="*")
     update.set_defaults(callback=functools.partial(run_command, cmd_update, False))
 
-    status = subparsers.add_parser('status', help='list installed addons')
-    status.add_argument('-v', '--verbose', action='store_true', help='enable more verbose output')
+    status = subparsers.add_parser("status", help="list installed addons")
+    status.add_argument("-v", "--verbose", action="store_true", help="enable more verbose output")
     status.set_defaults(callback=functools.partial(run_command, cmd_status, True))
 
     return parser.parse_args()
@@ -123,17 +122,17 @@ def parse_args():
 
 def arg_type_dir(value):
     if not os.path.isdir(value):
-        raise argparse.ArgumentTypeError('invalid directory path')
+        raise argparse.ArgumentTypeError("invalid directory path")
     return value
 
 
 # TODO get rid of read_only, check config.is_dirty()
 def run_command(cmd_callback, read_only, args):
-    if not os.path.isdir(args.addons_dir or ''):
-        raise CliError('addons directory not found')
+    if not os.path.isdir(args.addons_dir or ""):
+        raise CliError("addons directory not found")
 
-    config_path = os.path.join(args.addons_dir, 'snapjaw.json')
-    backup_path = os.path.join(args.addons_dir, 'snapjaw.backup.json')
+    config_path = os.path.join(args.addons_dir, "snapjaw.json")
+    backup_path = os.path.join(args.addons_dir, "snapjaw.backup.json")
     if not read_only and os.path.exists(config_path):
         shutil.copyfile(config_path, backup_path)
 
@@ -141,9 +140,9 @@ def run_command(cmd_callback, read_only, args):
     try:
         cmd_callback(config, args)
         if not read_only:
-            logging.info('Saving config...')
+            logging.info("Saving config...")
             config.save()
-            logging.info('Done!')
+            logging.info("Done!")
     except Exception:
         if not read_only and os.path.exists(backup_path):
             shutil.copyfile(backup_path, config_path)
@@ -154,42 +153,39 @@ def cmd_install(config: Config, args):
     scheme, netloc, path_string, params, query, fragment = urllib.parse.urlparse(args.url)
 
     branch_from_url = None
-    if netloc in ('github.com', 'gitlab.com'):
-        path = path_string.lstrip('/').split('/')
+    if netloc in ("github.com", "gitlab.com"):
+        path = path_string.lstrip("/").split("/")
         author = path.pop(0)
         repository = path.pop(0)
         if path:
-            if path[0] == '-' and path[1] == 'tree':
+            if path[0] == "-" and path[1] == "tree":
                 path = path[2:]
-            elif path[0] == 'tree':
+            elif path[0] == "tree":
                 path = path[1:]
-            branch_from_url = '/'.join(path)
-        path_string = '/'.join([author, repository])
-        if not path_string.endswith('.git'):
-            path_string += '.git'
+            branch_from_url = "/".join(path)
+        path_string = "/".join([author, repository])
+        if not path_string.endswith(".git"):
+            path_string += ".git"
 
     if args.branch and branch_from_url and args.branch != branch_from_url:
-        raise CliError(f'requested branch {args.branch}, but found branch {branch_from_url} in repository URL')
+        raise CliError(f"requested branch {args.branch}, but found branch {branch_from_url} in repository URL")
 
     repo_url = urllib.parse.urlunparse((scheme, netloc, path_string, params, query, fragment))
     return install_addon(config, repo_url, args.branch or branch_from_url, args.addons_dir)
 
 
-def install_addon(config: Config, repo_url: str, branch: Optional[str], addons_dir: str) -> None:
-    logging.info(f'Cloning {repo_url}')
+def install_addon(config: Config, repo_url: str, branch: str | None, addons_dir: str) -> None:
+    logging.info(f"Cloning {repo_url}")
 
     with TemporaryDirectory() as repo_dir:
         try:
             repo = mygit.clone(repo_url, branch, repo_dir)
         except mygit.GitError as error:
-            raise CliError(str(error))
+            raise CliError(str(error)) from error
 
-        try:
-            addons_by_dir = {item.path: item for item in toc.find_addons(repo.workdir, 11200)}
-        except toc.ParseError as error:
-            raise CliError(str(error))
+        addons_by_dir = {item.path: item for item in toc.find_addons(repo.workdir, 11200)}
         if not addons_by_dir:
-            raise CliError('no vanilla addons found')
+            raise CliError("no vanilla addons found")
 
         for addon in addons_by_dir.values():
             logging.info(f'Installing addon "{addon.name}", branch "{repo.branch}"')
@@ -198,11 +194,11 @@ def install_addon(config: Config, repo_url: str, branch: Optional[str], addons_d
             # TODO backup
             remove_addon_dir(dst_addon_dir)
 
-            shutil.copytree(addon.path, dst_addon_dir, ignore=shutil.ignore_patterns('.git*'))
+            shutil.copytree(addon.path, dst_addon_dir, ignore=shutil.ignore_patterns(".git*"))
 
             if repo.workdir != addon.path:
                 # Copy additional readme files from root folder, if any
-                for wc in ['*readme*', '*.txt', '*.html']:
+                for wc in ["*readme*", "*.txt", "*.html"]:
                     for fn in glob.glob(wc, root_dir=repo.workdir):
                         src_path = os.path.join(repo.workdir, fn)
                         dst_path = os.path.join(dst_addon_dir, fn)
@@ -216,10 +212,11 @@ def install_addon(config: Config, repo_url: str, branch: Optional[str], addons_d
                 commit=repo.head_commit_hex,
                 released_at=repo.head_commit_time,
                 installed_at=datetime.now(),
-                checksum=signature.calculate(dst_addon_dir))
+                checksum=signature.calculate(dst_addon_dir),
+            )
             config.save()
 
-        logging.info('Done')
+        logging.info("Done")
 
 
 def cmd_remove(config: Config, args):
@@ -229,7 +226,7 @@ def cmd_remove(config: Config, args):
         if addon is None:
             print(f'Addon not found: "{name}"')
         else:
-            print(f'Removing addon {addon.name}')
+            print(f"Removing addon {addon.name}")
             del config.addons_by_key[key]
             remove_addon_dir(os.path.join(args.addons_dir, addon.name))
 
@@ -241,7 +238,7 @@ def remove_addon_dir(path):
         try:
             shutil.rmtree(path)
         except OSError as e:
-            if e.args and e.args[0] == 'Cannot call rmtree on a symbolic link':
+            if e.args and e.args[0] == "Cannot call rmtree on a symbolic link":
                 os.remove(path)
             else:
                 raise
@@ -256,12 +253,12 @@ def cmd_update(config: Config, args):
         addons = []
         for state in get_addon_states(config, args.addons_dir):
             if state.error is not None:
-                print(f'Error: {state.addon}: {state.error}')
+                print(f"Error: {state.addon}: {state.error}")
             elif state.status == AddonStatus.Outdated:
                 addons.append(config.addons_by_key[addon_key(state.addon)])
 
     if not addons:
-        print('No addons to update found')
+        print("No addons to update found")
         return
 
     for addon in addons:
@@ -271,19 +268,19 @@ def cmd_update(config: Config, args):
 def get_addon_from_config(config: Config, addon_name: str) -> ConfigAddon:
     addon = config.addons_by_key.get(addon_key(addon_name))
     if addon is None:
-        raise argparse.ArgumentTypeError('unknown addon')
+        raise argparse.ArgumentTypeError("unknown addon")
     return addon
 
 
 def cmd_status(config: Config, args):
     addon_states = get_addon_states(config, args.addons_dir)
     if not addon_states:
-        print('No addons found')
+        print("No addons found")
         return
 
-    def format_dt(dt: Optional[datetime]) -> str:
+    def format_dt(dt: datetime | None) -> str:
         if not dt:
-            return ''
+            return ""
         return humanize.naturaldate(dt)
 
     status_to_color = {
@@ -308,45 +305,45 @@ def cmd_status(config: Config, args):
                 format_dt(state.installed_at),
             ]
             if has_error:
-                columns.append(state.error or '')
+                columns.append(state.error or "")
             table.append(columns)
 
     # TODO add updated_at, rename released_at
-    headers = ['addon', 'status', 'released_at', 'installed_at']
+    headers = ["addon", "status", "released_at", "installed_at"]
     if has_error:
-        headers.append('error')
+        headers.append("error")
 
     cr.init()
-    print(tabulate.tabulate(table, tablefmt='psql', headers=headers))
+    print(tabulate.tabulate(table, tablefmt="psql", headers=headers))
     if not args.verbose:
         num_updated = Counter(s.status for s in addon_states)[AddonStatus.UpToDate]
         if num_updated > 0:
-            msg = f'{num_updated}{" other" if table else ""} addons are up to date'
+            msg = f"{num_updated}{' other' if table else ''} addons are up to date"
             print(cr.Fore.GREEN + msg + cr.Fore.RESET)
     cr.deinit()
 
 
 class AddonStatus(enum.Enum):
-    Unknown = 'unknown'
-    Modified = 'modified'
-    UpToDate = 'up-to-date'
-    Outdated = 'outdated'
-    Untracked = 'untracked'
-    Missing = 'missing'
-    Error = 'error'
+    Unknown = "unknown"
+    Modified = "modified"
+    UpToDate = "up-to-date"
+    Outdated = "outdated"
+    Untracked = "untracked"
+    Missing = "missing"
+    Error = "error"
 
 
 @dataclass
 class AddonState:
     addon: str
     status: AddonStatus
-    error: Optional[str]
-    released_at: Optional[datetime]
-    installed_at: Optional[datetime]
+    error: str | None
+    released_at: datetime | None
+    installed_at: datetime | None
 
 
 def get_addon_states(config: Config, addons_dir: str) -> list[AddonState]:
-    url_to_branch_to_addons = {}
+    url_to_branch_to_addons: dict[str, dict[str, list[ConfigAddon]]] = {}
     for addon in config.addons_by_key.values():
         url_to_branch_to_addons.setdefault(addon.url, {}).setdefault(addon.branch, []).append(addon)
 
@@ -357,31 +354,33 @@ def get_addon_states(config: Config, addons_dir: str) -> list[AddonState]:
     for state in mygit.fetch_states(requests):
         for addon in url_to_branch_to_addons[state.url][state.branch]:
             processed += 1
-            print(f'{processed}/{total_addons}', end='\r')
+            print(f"{processed}/{total_addons}", end="\r")
             comment = None
             if state.error is not None:
                 status = AddonStatus.Error
                 comment = state.error
             elif state.head_commit_hex is None:
                 status = AddonStatus.Unknown
-            elif not signature.validate(os.path.join(addons_dir, addon.name), addon.checksum):
+            elif addon.checksum is None or not signature.validate(os.path.join(addons_dir, addon.name), addon.checksum):
                 status = AddonStatus.Modified
             elif state.head_commit_hex == addon.commit:
                 status = AddonStatus.UpToDate
             else:
                 status = AddonStatus.Outdated
             addon_key_to_state[addon_key(addon.name)] = AddonState(
-                addon.name, status, comment, addon.released_at, addon.installed_at)
+                addon.name, status, comment, addon.released_at, addon.installed_at
+            )
     print()
 
     for name in os.listdir(addons_dir):
         path = os.path.join(addons_dir, name)
         name_key = addon_key(name)
-        if os.path.isdir(path) and not name.startswith('Blizzard_') and name_key not in addon_key_to_state:
+        if os.path.isdir(path) and not name.startswith("Blizzard_") and name_key not in addon_key_to_state:
             addon_key_to_state[name_key] = AddonState(name, AddonStatus.Untracked, None, None, None)
 
-    for name in set(config.addons_by_key.keys()) - set(addon_key_to_state.keys()):
-        addon_key_to_state[addon_key(name)] = AddonState(name, AddonStatus.Missing, None, None, None)
+    for key in set(config.addons_by_key.keys()) - set(addon_key_to_state.keys()):
+        addon = config.addons_by_key[key]
+        addon_key_to_state[key] = AddonState(addon.name, AddonStatus.Missing, None, None, None)
 
     return list(sort_addons_dict(addon_key_to_state).values())
 
@@ -394,6 +393,6 @@ def addon_key(name: str) -> str:
     return name.lower()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":  # pragma: no cover
     multiprocessing.freeze_support()
     sys.exit(main())

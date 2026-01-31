@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  check:
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -22,7 +22,38 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.12'
+          architecture: x64
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Ruff check
+        run: uv run ruff check src/ tests/
+
+      - name: Ruff format
+        run: uv run ruff format --check src/ tests/
+
+      - name: Mypy
+        run: uv run mypy src/
+
+      - name: Tests with coverage
+        run: uv run pytest --cov=src --cov-report=term-missing --cov-fail-under=100
+
+  build:
+    needs: check
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
           architecture: x64
 
       - name: Install dependencies
