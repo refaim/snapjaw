@@ -107,6 +107,9 @@ class TestGetAddonStates:
 
     def test_unknown(self, tmp_path, monkeypatch, make_addon, capsys):
         """No commit and no error sets Unknown status."""
+        addon_dir = tmp_path / "TestAddon"
+        addon_dir.mkdir()
+
         addon = make_addon()
         config = Config(addons_by_key={"testaddon": addon})
 
@@ -152,6 +155,29 @@ class TestGetAddonStates:
         assert states[0].status == AddonStatus.Missing
         # Verify original addon name is used, not lowercase key
         assert states[0].addon == "MyMissingAddon"
+        capsys.readouterr()
+
+    def test_missing_directory_with_remote_state(self, tmp_path, monkeypatch, make_addon, capsys):
+        """Addon in config with valid remote state but missing directory should be Missing, not crash.
+
+        Reproduces https://github.com/.../issues/47: when an addon directory is renamed
+        (e.g. adding '---' suffix), signature.validate raises ValueError instead of
+        gracefully reporting the addon as missing.
+        """
+        # Addon is in config with a checksum, but its directory does NOT exist on disk
+        addon = make_addon(checksum="sig|2")
+        config = Config(addons_by_key={"testaddon": addon})
+
+        # Remote returns a valid state (so the code enters the signature.validate branch)
+        monkeypatch.setattr(
+            "snapjaw.mygit.fetch_states",
+            lambda reqs: iter([RemoteState("https://github.com/test/test.git", "master", "abc123", None)]),
+        )
+        # Do NOT mock signature.validate — use the real one to reproduce the ValueError
+
+        states = get_addon_states(config, str(tmp_path))
+        assert len(states) == 1
+        assert states[0].status == AddonStatus.Missing
         capsys.readouterr()
 
     def test_multiple_addons_different_statuses(self, tmp_path, monkeypatch, make_addon, capsys):

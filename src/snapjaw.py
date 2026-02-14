@@ -358,12 +358,15 @@ def get_addon_states(config: Config, addons_dir: str) -> list[AddonState]:
             processed += 1
             print(f"{processed}/{total_addons}", end="\r")
             comment = None
+            addon_dir = os.path.join(addons_dir, addon.name)
             if state.error is not None:
                 status = AddonStatus.Error
                 comment = state.error
+            elif not os.path.isdir(addon_dir):
+                status = AddonStatus.Missing
             elif state.head_commit_hex is None:
                 status = AddonStatus.Unknown
-            elif addon.checksum is None or not signature.validate(os.path.join(addons_dir, addon.name), addon.checksum):
+            elif addon.checksum is None or not signature.validate(addon_dir, addon.checksum):
                 status = AddonStatus.Modified
             elif state.head_commit_hex == addon.commit:
                 status = AddonStatus.UpToDate
