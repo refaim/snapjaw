@@ -75,7 +75,7 @@ class TestFetchStates:
         remote = mock_remote(
             "abc123",
             "https://github.com/test/repo.git",
-            refs=[{"name": "refs/heads/master", "symref_target": "", "oid": "deadbeef"}],
+            refs=[SimpleNamespace(name="refs/heads/master", symref_target="", oid="deadbeef")],
         )
         mock_pygit2_repo.remotes.__iter__ = MagicMock(return_value=iter([remote]))
 
@@ -92,7 +92,7 @@ class TestFetchStates:
         remote = mock_remote(
             "abc123",
             "https://github.com/test/repo.git",
-            refs=[{"name": "HEAD", "symref_target": "refs/heads/main", "oid": "cafebabe"}],
+            refs=[SimpleNamespace(name="HEAD", symref_target="refs/heads/main", oid="cafebabe")],
         )
         mock_pygit2_repo.remotes.__iter__ = MagicMock(return_value=iter([remote]))
 
@@ -137,7 +137,7 @@ class TestFetchStates:
         remote = mock_remote(
             "abc123",
             "https://github.com/test/repo.git",
-            refs=[{"name": "refs/heads/other-branch", "symref_target": "", "oid": "deadbeef"}],
+            refs=[SimpleNamespace(name="refs/heads/other-branch", symref_target="", oid="deadbeef")],
         )
         mock_pygit2_repo.remotes.__iter__ = MagicMock(return_value=iter([remote]))
 

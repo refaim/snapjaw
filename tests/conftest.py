@@ -128,9 +128,9 @@ def mock_remote():
         remote.name = name
         remote.url = url
         if error:
-            remote.ls_remotes.side_effect = pygit2.GitError(error)
+            remote.list_heads.side_effect = pygit2.GitError(error)
         else:
-            remote.ls_remotes.return_value = refs or []
+            remote.list_heads.return_value = refs or []
         return remote
 
     return _mock_remote
