@@ -111,7 +111,7 @@ class RemoteState:
 @dataclass
 class _RemoteLsResult:
     remote: pygit2.Remote
-    refs: list[dict]
+    refs: list
     error: str | None
 
 
@@ -127,7 +127,7 @@ def fetch_states(requests: list[RemoteStateRequest]) -> Iterator[RemoteState]:
 
         def ls(remote: pygit2.Remote) -> _RemoteLsResult:
             try:
-                refs = remote.ls_remotes()
+                refs = remote.list_heads()
                 error = None
             except pygit2.GitError as exception:
                 refs = []
@@ -148,9 +148,9 @@ def fetch_states(requests: list[RemoteStateRequest]) -> Iterator[RemoteState]:
                     else:
                         branch_ref = f"refs/heads/{branch}"
                         for ref in ls_result.refs:
-                            is_head = ref["name"] == "HEAD" and ref["symref_target"] == branch_ref
-                            if is_head or ref["name"] == branch_ref:
-                                yield RemoteState(url, branch, str(ref["oid"]), None)
+                            is_head = ref.name == "HEAD" and ref.symref_target == branch_ref
+                            if is_head or ref.name == branch_ref:
+                                yield RemoteState(url, branch, str(ref.oid), None)
                                 break
 
 

@@ -35,6 +35,7 @@ markers = [
     "slow: mark test as slow",
 ]
 addopts = "-m 'not integration'"
+filterwarnings = ["error"]
 
 [dependency-groups]
 dev = [
