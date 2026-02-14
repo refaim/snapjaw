@@ -11,7 +11,10 @@ permissions:
 
 jobs:
   check:
-    runs-on: windows-latest
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,7 +57,7 @@ jobs:
           report_type: test_results
           files: junit.xml
 
-  build:
+  build-windows:
     needs: check
     runs-on: windows-latest
     steps:
@@ -78,7 +81,7 @@ jobs:
         with:
           path: |
             ~\AppData\Local\Nuitka
-          key: nuitka-py3.12-${{ hashFiles('uv.lock') }}
+          key: nuitka-windows-py3.12-${{ hashFiles('uv.lock') }}
 
       - name: Build
         run: |
@@ -87,31 +90,78 @@ jobs:
           Get-Item -Path build\snapjaw.dist\* | Move-Item -Destination build\snapjaw\snapjaw
 
       - name: Package
-        run: Compress-Archive -Path build\snapjaw\* -DestinationPath snapjaw.zip
+        run: Compress-Archive -Path build\snapjaw\* -DestinationPath snapjaw-windows-x86_64.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: snapjaw
-          path: snapjaw.zip
+          name: snapjaw-windows-x86_64
+          path: snapjaw-windows-x86_64.zip
+
+  build-linux:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Cache Nuitka
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/Nuitka
+          key: nuitka-linux-py3.12-${{ hashFiles('uv.lock') }}
+
+      - name: Build
+        run: uv run nuitka --onefile --prefer-source-code --assume-yes-for-downloads --show-scons --output-dir=build --include-module=_cffi_backend src/snapjaw.py
+
+      - name: Package
+        run: |
+          mv build/snapjaw.bin snapjaw
+          tar czf snapjaw-linux-x86_64.tar.gz snapjaw
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapjaw-linux-x86_64
+          path: snapjaw-linux-x86_64.tar.gz
 
   release:
-    needs: build
+    needs: [build-windows, build-linux]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
-      - name: Download artifact
+      - name: Download artifacts
         uses: actions/download-artifact@v4
-        with:
-          name: snapjaw
 
       - name: Get date
         id: date
         run: echo "date=$(date +%Y.%m.%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Rename artifacts
+        env:
+          VERSION: ${{ steps.date.outputs.date }}.${{ github.run_number }}
+        run: |
+          mv snapjaw-windows-x86_64/snapjaw-windows-x86_64.zip snapjaw-${VERSION}-windows-x86_64.zip
+          mv snapjaw-linux-x86_64/snapjaw-linux-x86_64.tar.gz snapjaw-${VERSION}-linux-x86_64.tar.gz
 
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.date.outputs.date }}.${{ github.run_number }}
           name: ${{ steps.date.outputs.date }}.${{ github.run_number }}
-          files: snapjaw.zip
+          files: |
+            snapjaw-${{ steps.date.outputs.date }}.${{ github.run_number }}-windows-x86_64.zip
+            snapjaw-${{ steps.date.outputs.date }}.${{ github.run_number }}-linux-x86_64.tar.gz
