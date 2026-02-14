@@ -13,9 +13,22 @@
 - Simple command line interface
 
 ## How to install
-- [Download snapjaw](https://github.com/refaim/snapjaw/releases/latest)
+
+### Windows
+- [Download snapjaw](https://github.com/refaim/snapjaw/releases/latest) (the `.zip` file)
 - Extract the archive into the WoW folder. This will create a structure similar to `C:\Games\WoW\snapjaw\snapjaw.exe`. Alternatively, if you choose a different destination, you'll need to specify the path to the addons directory using the `--addons-dir` argument.
 - See usage examples or run `snapjaw.exe --help`
+
+### Linux
+- [Download snapjaw](https://github.com/refaim/snapjaw/releases/latest) (the `.tar.gz` file)
+- Extract and install:
+  ```
+  tar xzf snapjaw-*-linux-x86_64.tar.gz
+  chmod +x snapjaw
+  mv snapjaw ~/.local/bin/
+  ```
+- Run from your WoW directory: `cd /path/to/wow && snapjaw --help`
+- Or use `--addons-dir` to specify the path to `Interface/Addons` from anywhere
 
 #### Note
 If you are new to snapjaw, you will need to reinstall each of your addons manually using the `snapjaw install` command. This process is essential as it creates an index file to effectively track the status of your addons folder.
