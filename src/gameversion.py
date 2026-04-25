@@ -72,15 +72,12 @@ def _read_expansion_from_exe(game_dir: Path) -> Expansion:
             break
     if exe_path is None:
         raise GameVersionError(
-            f"could not detect game version: no WoW.exe or Ascension.exe in {game_dir}; "
-            f"specify --game-version"
+            f"could not detect game version: no WoW.exe or Ascension.exe in {game_dir}; specify --game-version"
         )
 
     try:
         pe = pefile.PE(str(exe_path), fast_load=True)
-        pe.parse_data_directories(
-            directories=[pefile.DIRECTORY_ENTRY["IMAGE_DIRECTORY_ENTRY_RESOURCE"]]
-        )
+        pe.parse_data_directories(directories=[pefile.DIRECTORY_ENTRY["IMAGE_DIRECTORY_ENTRY_RESOURCE"]])
         fixed_info = pe.VS_FIXEDFILEINFO[0]
         file_version_ms = fixed_info.FileVersionMS
         file_version_ls = fixed_info.FileVersionLS
@@ -134,10 +131,6 @@ def resolve(
         game_dir = found
         addons_dir_path = game_dir / "Interface" / "Addons"
 
-    expansion = (
-        Expansion(game_version_arg)
-        if game_version_arg is not None
-        else _read_expansion_from_exe(game_dir)
-    )
+    expansion = Expansion(game_version_arg) if game_version_arg is not None else _read_expansion_from_exe(game_dir)
 
     return Resolved(addons_dir=addons_dir_path, expansion=expansion)

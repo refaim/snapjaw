@@ -22,11 +22,11 @@ class TestFindAddons:
             (11200, Expansion.Vanilla, 1),  # vanilla addon found
             (20000, Expansion.Vanilla, 0),  # TBC addon filtered out
             (11201, Expansion.Vanilla, 0),  # version just above max
-            (30000, Expansion.Wotlk, 1),    # wotlk lower bound
-            (30300, Expansion.Wotlk, 1),    # wotlk upper bound
-            (30301, Expansion.Wotlk, 0),    # just above wotlk upper
-            (29999, Expansion.Wotlk, 0),    # just below wotlk lower
-            (11200, Expansion.Wotlk, 0),    # vanilla TOC under wotlk client
+            (30000, Expansion.Wotlk, 1),  # wotlk lower bound
+            (30300, Expansion.Wotlk, 1),  # wotlk upper bound
+            (30301, Expansion.Wotlk, 0),  # just above wotlk upper
+            (29999, Expansion.Wotlk, 0),  # just below wotlk lower
+            (11200, Expansion.Wotlk, 0),  # vanilla TOC under wotlk client
             (30200, Expansion.Vanilla, 0),  # wotlk TOC under vanilla client
         ],
     )

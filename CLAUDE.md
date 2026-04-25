@@ -6,10 +6,16 @@ Before declaring a task done, run:
 
     uv run pytest -q
     uv run ruff check src/ tests/
+    uv run ruff format --check src/ tests/
     uv run mypy src/
 
-All three must pass clean. The project's CI runs the same checks on
-Linux and Windows; if it fails on either, treat as a blocker.
+All four must pass clean. `ruff format --check` is independent of
+`ruff check` — the linter does not enforce formatting and the formatter
+does not lint. CI runs both. If `ruff format --check` reports
+differences, run `uv run ruff format src/ tests/` to fix them.
+
+The project's CI runs the same checks on Linux and Windows; if any of
+them fails on either OS, treat as a blocker.
 
 ## Workflow Rules
 

@@ -105,7 +105,10 @@ class TestInstallAddon:
             (addon_dir / "init.lua").write_text("-- addon code")
 
             install_addon(
-                env.config, "https://github.com/test/repo.git", "master", str(env.addons_dir),
+                env.config,
+                "https://github.com/test/repo.git",
+                "master",
+                str(env.addons_dir),
                 gameversion.Expansion.Vanilla,
             )
 
@@ -119,7 +122,11 @@ class TestInstallAddon:
         config = Config(addons_by_key={})
         with pytest.raises(CliError, match="auth failed"):
             install_addon(
-                config, "https://github.com/test/repo.git", None, str(tmp_path), gameversion.Expansion.Vanilla,
+                config,
+                "https://github.com/test/repo.git",
+                None,
+                str(tmp_path),
+                gameversion.Expansion.Vanilla,
             )
 
     def test_no_addons_found_raises_error(self, mock_install_env, monkeypatch):
@@ -129,7 +136,10 @@ class TestInstallAddon:
 
             with pytest.raises(CliError, match="no vanilla addons found in repository"):
                 install_addon(
-                    env.config, "https://github.com/test/repo.git", None, str(env.addons_dir),
+                    env.config,
+                    "https://github.com/test/repo.git",
+                    None,
+                    str(env.addons_dir),
                     gameversion.Expansion.Vanilla,
                 )
 
@@ -140,7 +150,10 @@ class TestInstallAddon:
 
             with pytest.raises(CliError, match="no wotlk addons found in repository"):
                 install_addon(
-                    env.config, "https://github.com/test/repo.git", None, str(env.addons_dir),
+                    env.config,
+                    "https://github.com/test/repo.git",
+                    None,
+                    str(env.addons_dir),
                     gameversion.Expansion.Wotlk,
                 )
 
@@ -153,7 +166,10 @@ class TestInstallAddon:
             (env.repo_dir / "README.txt").write_text("read me")
 
             install_addon(
-                env.config, "https://github.com/test/repo.git", "master", str(env.addons_dir),
+                env.config,
+                "https://github.com/test/repo.git",
+                "master",
+                str(env.addons_dir),
                 gameversion.Expansion.Vanilla,
             )
 
@@ -170,7 +186,10 @@ class TestInstallAddon:
             )
 
             install_addon(
-                env.config, "https://github.com/test/repo.git", "master", str(env.addons_dir),
+                env.config,
+                "https://github.com/test/repo.git",
+                "master",
+                str(env.addons_dir),
                 gameversion.Expansion.Vanilla,
             )
 
@@ -187,7 +206,10 @@ class TestInstallAddon:
             (env.repo_dir / "README.txt").write_text("root readme")
 
             install_addon(
-                env.config, "https://github.com/test/repo.git", "master", str(env.addons_dir),
+                env.config,
+                "https://github.com/test/repo.git",
+                "master",
+                str(env.addons_dir),
                 gameversion.Expansion.Vanilla,
             )
 
@@ -293,13 +315,13 @@ class TestCmdUpdate:
     def test_update_by_name(self, tmp_path, monkeypatch, make_config):
         """Update specific addon by name calls install_addon."""
         calls = []
-        monkeypatch.setattr(
-            "snapjaw.install_addon", lambda config, url, branch, d, expansion: calls.append(url)
-        )
+        monkeypatch.setattr("snapjaw.install_addon", lambda config, url, branch, d, expansion: calls.append(url))
 
         config = make_config("MyAddon")
         args = SimpleNamespace(
-            names=["MyAddon"], addons_dir=str(tmp_path), expansion=gameversion.Expansion.Vanilla,
+            names=["MyAddon"],
+            addons_dir=str(tmp_path),
+            expansion=gameversion.Expansion.Vanilla,
         )
         cmd_update(config, args)
         assert len(calls) == 1
@@ -307,9 +329,7 @@ class TestCmdUpdate:
     def test_update_all_outdated(self, tmp_path, monkeypatch, make_config, fixed_now):
         """Update without names updates all outdated addons."""
         calls = []
-        monkeypatch.setattr(
-            "snapjaw.install_addon", lambda config, url, branch, d, expansion: calls.append(url)
-        )
+        monkeypatch.setattr("snapjaw.install_addon", lambda config, url, branch, d, expansion: calls.append(url))
         monkeypatch.setattr(
             "snapjaw.get_addon_states",
             lambda config, d: [AddonState("MyAddon", AddonStatus.Outdated, None, fixed_now, fixed_now)],

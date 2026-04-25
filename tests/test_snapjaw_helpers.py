@@ -90,7 +90,15 @@ class TestParseArgs:
         """Install command parses URL argument."""
         monkeypatch.setattr(
             "sys.argv",
-            ["snapjaw", "--addons-dir", str(tmp_path), "--game-version", "vanilla", "install", "https://example.com/repo.git"],
+            [
+                "snapjaw",
+                "--addons-dir",
+                str(tmp_path),
+                "--game-version",
+                "vanilla",
+                "install",
+                "https://example.com/repo.git",
+            ],
         )
         args = parse_args()
         assert args.url == "https://example.com/repo.git"

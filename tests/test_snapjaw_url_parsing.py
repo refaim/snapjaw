@@ -24,7 +24,10 @@ class TestUrlParsing:
             monkeypatch.setattr("snapjaw.install_addon", mock_install)
 
             args = SimpleNamespace(
-                url=url, branch=branch, addons_dir=str(tmp_path), expansion=gameversion.Expansion.Vanilla,
+                url=url,
+                branch=branch,
+                addons_dir=str(tmp_path),
+                expansion=gameversion.Expansion.Vanilla,
             )
             config = Config(addons_by_key={})
             cmd_install(config, args)
