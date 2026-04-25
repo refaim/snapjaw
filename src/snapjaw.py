@@ -20,6 +20,7 @@ import humanize
 import tabulate
 from dataclasses_json import DataClassJsonMixin
 
+import gameversion
 import mygit
 import signature
 import toc
@@ -67,8 +68,8 @@ class Config(DataClassJsonMixin):
 
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-    cmd_args = parse_args()
     try:
+        cmd_args = parse_args()
         cmd_args.callback(cmd_args)
     except CliError as error:
         print(f"error: {error}", file=sys.stderr)
@@ -79,23 +80,19 @@ def main():
 def parse_args():
     parser = argparse.ArgumentParser()
 
-    wow_dir = None
-    cwd = Path.cwd()
-    while wow_dir is None and cwd != cwd.parent:
-        if cwd.joinpath("WoW.exe").is_file():
-            wow_dir = cwd
-        cwd = cwd.parent
-
-    addons_dir = None
-    if wow_dir is not None:
-        addons_dir = wow_dir.joinpath("Interface", "Addons")
-
     parser.add_argument(
         "--addons-dir",
         required=False,
         type=arg_type_dir,
-        default=addons_dir,
+        default=None,
         help="optional path to Interface\\Addons directory",
+    )
+    parser.add_argument(
+        "--game-version",
+        required=False,
+        choices=["vanilla", "wotlk"],
+        default=None,
+        help="override game version detection (vanilla = 1.x, wotlk = 3.3.5)",
     )
 
     subparsers = parser.add_subparsers(required=True)
@@ -117,7 +114,14 @@ def parse_args():
     status.add_argument("-v", "--verbose", action="store_true", help="enable more verbose output")
     status.set_defaults(callback=functools.partial(run_command, cmd_status, True))
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    try:
+        resolved = gameversion.resolve(args.addons_dir, args.game_version, Path.cwd())
+    except gameversion.GameVersionError as error:
+        raise CliError(str(error)) from error
+    args.addons_dir = str(resolved.addons_dir)
+    args.expansion = resolved.expansion
+    return args
 
 
 def arg_type_dir(value):
@@ -171,10 +175,16 @@ def cmd_install(config: Config, args):
         raise CliError(f"requested branch {args.branch}, but found branch {branch_from_url} in repository URL")
 
     repo_url = urllib.parse.urlunparse((scheme, netloc, path_string, params, query, fragment))
-    return install_addon(config, repo_url, args.branch or branch_from_url, args.addons_dir)
+    return install_addon(config, repo_url, args.branch or branch_from_url, args.addons_dir, args.expansion)
 
 
-def install_addon(config: Config, repo_url: str, branch: str | None, addons_dir: str) -> None:
+def install_addon(
+    config: Config,
+    repo_url: str,
+    branch: str | None,
+    addons_dir: str,
+    expansion: gameversion.Expansion,
+) -> None:
     logging.info(f"Cloning {repo_url}")
 
     with TemporaryDirectory() as repo_dir:
@@ -183,9 +193,9 @@ def install_addon(config: Config, repo_url: str, branch: str | None, addons_dir:
         except mygit.GitError as error:
             raise CliError(str(error)) from error
 
-        addons_by_dir = {item.path: item for item in toc.find_addons(repo.workdir, 11200)}
+        addons_by_dir = {item.path: item for item in toc.find_addons(repo.workdir, expansion)}
         if not addons_by_dir:
-            raise CliError("no vanilla addons found")
+            raise CliError(f"no {expansion.value} addons found in repository")
 
         for addon in addons_by_dir.values():
             logging.info(f'Installing addon "{addon.name}", branch "{repo.branch}"')
@@ -262,7 +272,7 @@ def cmd_update(config: Config, args):
         return
 
     for addon in addons:
-        install_addon(config, addon.url, addon.branch, args.addons_dir)
+        install_addon(config, addon.url, addon.branch, args.addons_dir, args.expansion)
 
 
 def get_addon_from_config(config: Config, addon_name: str) -> ConfigAddon:

@@ -15,6 +15,7 @@ import os
 
 import pytest
 
+from gameversion import Expansion
 from mygit import GitError, RemoteStateRequest, clone, fetch_states
 from toc import find_addons
 
@@ -109,7 +110,7 @@ class TestFindAddonsRealRepos:
             None,
             str(tmp_path / "repo"),
         )
-        addons = list(find_addons(repo.workdir, 11200))
+        addons = list(find_addons(repo.workdir, Expansion.Vanilla))
         assert len(addons) >= 1
         addon_names = {a.name for a in addons}
         assert "MissingCrafts" in addon_names
@@ -121,7 +122,7 @@ class TestFindAddonsRealRepos:
             None,
             str(tmp_path / "repo"),
         )
-        addons = list(find_addons(repo.workdir, 11200))
+        addons = list(find_addons(repo.workdir, Expansion.Vanilla))
         # Libraries typically don't have a .toc with proper Interface version
         # or their toc is for embedding, not standalone use
         assert len(addons) == 0
@@ -133,5 +134,5 @@ class TestFindAddonsRealRepos:
             None,
             str(tmp_path / "repo"),
         )
-        addons = list(find_addons(repo.workdir, 11200))
+        addons = list(find_addons(repo.workdir, Expansion.Vanilla))
         assert len(addons) >= 1
