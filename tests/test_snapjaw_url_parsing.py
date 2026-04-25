@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import gameversion
 from snapjaw import CliError, Config, cmd_install
 
 
@@ -17,12 +18,14 @@ class TestUrlParsing:
         def _run(url, branch=None):
             calls = []
 
-            def mock_install(config, repo_url, branch, addons_dir):
+            def mock_install(config, repo_url, branch, addons_dir, expansion):
                 calls.append((repo_url, branch))
 
             monkeypatch.setattr("snapjaw.install_addon", mock_install)
 
-            args = SimpleNamespace(url=url, branch=branch, addons_dir=str(tmp_path))
+            args = SimpleNamespace(
+                url=url, branch=branch, addons_dir=str(tmp_path), expansion=gameversion.Expansion.Vanilla,
+            )
             config = Config(addons_by_key={})
             cmd_install(config, args)
             return calls[0]

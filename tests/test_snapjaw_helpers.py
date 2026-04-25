@@ -90,7 +90,7 @@ class TestParseArgs:
         """Install command parses URL argument."""
         monkeypatch.setattr(
             "sys.argv",
-            ["snapjaw", "--addons-dir", str(tmp_path), "install", "https://example.com/repo.git"],
+            ["snapjaw", "--addons-dir", str(tmp_path), "--game-version", "vanilla", "install", "https://example.com/repo.git"],
         )
         args = parse_args()
         assert args.url == "https://example.com/repo.git"
@@ -99,7 +99,7 @@ class TestParseArgs:
         """Remove command parses addon names."""
         monkeypatch.setattr(
             "sys.argv",
-            ["snapjaw", "--addons-dir", str(tmp_path), "remove", "MyAddon"],
+            ["snapjaw", "--addons-dir", str(tmp_path), "--game-version", "vanilla", "remove", "MyAddon"],
         )
         args = parse_args()
         assert args.names == ["MyAddon"]
@@ -108,7 +108,7 @@ class TestParseArgs:
         """Update without names has empty names list."""
         monkeypatch.setattr(
             "sys.argv",
-            ["snapjaw", "--addons-dir", str(tmp_path), "update"],
+            ["snapjaw", "--addons-dir", str(tmp_path), "--game-version", "vanilla", "update"],
         )
         args = parse_args()
         assert args.names == []
@@ -117,7 +117,7 @@ class TestParseArgs:
         """Update with names parses addon names."""
         monkeypatch.setattr(
             "sys.argv",
-            ["snapjaw", "--addons-dir", str(tmp_path), "update", "MyAddon"],
+            ["snapjaw", "--addons-dir", str(tmp_path), "--game-version", "vanilla", "update", "MyAddon"],
         )
         args = parse_args()
         assert args.names == ["MyAddon"]
@@ -126,7 +126,7 @@ class TestParseArgs:
         """Status command defaults to non-verbose."""
         monkeypatch.setattr(
             "sys.argv",
-            ["snapjaw", "--addons-dir", str(tmp_path), "status"],
+            ["snapjaw", "--addons-dir", str(tmp_path), "--game-version", "vanilla", "status"],
         )
         args = parse_args()
         assert args.verbose is False
@@ -135,7 +135,7 @@ class TestParseArgs:
         """Status -v flag sets verbose=True."""
         monkeypatch.setattr(
             "sys.argv",
-            ["snapjaw", "--addons-dir", str(tmp_path), "status", "-v"],
+            ["snapjaw", "--addons-dir", str(tmp_path), "--game-version", "vanilla", "status", "-v"],
         )
         args = parse_args()
         assert args.verbose is True
@@ -147,8 +147,88 @@ class TestParseArgs:
         addons_dir.mkdir(parents=True)
         monkeypatch.setattr("pathlib.Path.cwd", lambda: addons_dir)
         monkeypatch.setattr("sys.argv", ["snapjaw", "status"])
+
+        # Mock pefile.PE to report vanilla 1.12.x.
+        fixed = MagicMock(FileVersionMS=(1 << 16) | 12, FileVersionLS=0)
+        pe = MagicMock(VS_FIXEDFILEINFO=[fixed])
+        pe.parse_data_directories = MagicMock()
+        monkeypatch.setattr("gameversion.pefile.PE", lambda *a, **kw: pe)
+
         args = parse_args()
         assert str(args.addons_dir) == str(addons_dir)
+        assert args.expansion.value == "vanilla"
+
+    def test_ascension_dir_auto_detection(self, tmp_path, monkeypatch):
+        """Ascension.exe in game dir is detected and yields wotlk expansion."""
+        (tmp_path / "Ascension.exe").touch()
+        addons_dir = tmp_path / "Interface" / "Addons"
+        addons_dir.mkdir(parents=True)
+        monkeypatch.setattr("pathlib.Path.cwd", lambda: addons_dir)
+        monkeypatch.setattr("sys.argv", ["snapjaw", "status"])
+
+        fixed = MagicMock(FileVersionMS=(3 << 16) | 3, FileVersionLS=(5 << 16) | 12340)
+        pe = MagicMock(VS_FIXEDFILEINFO=[fixed])
+        pe.parse_data_directories = MagicMock()
+        monkeypatch.setattr("gameversion.pefile.PE", lambda *a, **kw: pe)
+
+        args = parse_args()
+        assert str(args.addons_dir) == str(addons_dir)
+        assert args.expansion.value == "wotlk"
+
+    def test_game_version_override_flag(self, tmp_path, monkeypatch):
+        """--game-version=wotlk overrides exe detection (no exe required)."""
+        # Note: --addons-dir is provided so no walk-up is attempted.
+        addons_dir = tmp_path / "Interface" / "Addons"
+        addons_dir.mkdir(parents=True)
+        monkeypatch.setattr("pathlib.Path.cwd", lambda: tmp_path)
+        monkeypatch.setattr(
+            "sys.argv",
+            ["snapjaw", "--addons-dir", str(addons_dir), "--game-version", "wotlk", "status"],
+        )
+
+        args = parse_args()
+        assert str(args.addons_dir) == str(addons_dir)
+        assert args.expansion.value == "wotlk"
+
+    def test_game_version_override_no_exe_required(self, tmp_path, monkeypatch):
+        """--game-version overrides also work when no exe exists anywhere."""
+        # Empty tmp_path: no game dir, no exes.
+        addons_dir = tmp_path / "Addons"
+        addons_dir.mkdir()
+        monkeypatch.setattr("pathlib.Path.cwd", lambda: tmp_path)
+        monkeypatch.setattr(
+            "sys.argv",
+            ["snapjaw", "--addons-dir", str(addons_dir), "--game-version", "vanilla", "status"],
+        )
+
+        args = parse_args()
+        assert args.expansion.value == "vanilla"
+
+    def test_no_exe_no_override_raises_cli_error(self, tmp_path, monkeypatch):
+        """No game dir + no override → CliError with actionable message."""
+        # Empty tmp_path, no --addons-dir, no --game-version.
+        monkeypatch.setattr("pathlib.Path.cwd", lambda: tmp_path)
+        monkeypatch.setattr("sys.argv", ["snapjaw", "status"])
+
+        with pytest.raises(CliError, match=r"could not find game directory"):
+            parse_args()
+
+    def test_unsupported_major_raises_cli_error(self, tmp_path, monkeypatch):
+        """Exe with unsupported major version (e.g. TBC 2.x) → CliError."""
+        (tmp_path / "WoW.exe").touch()
+        addons_dir = tmp_path / "Interface" / "Addons"
+        addons_dir.mkdir(parents=True)
+        monkeypatch.setattr("pathlib.Path.cwd", lambda: addons_dir)
+        monkeypatch.setattr("sys.argv", ["snapjaw", "status"])
+
+        # 2.4.3 = TBC = unsupported.
+        fixed = MagicMock(FileVersionMS=(2 << 16) | 4, FileVersionLS=(3 << 16) | 0)
+        pe = MagicMock(VS_FIXEDFILEINFO=[fixed])
+        pe.parse_data_directories = MagicMock()
+        monkeypatch.setattr("gameversion.pefile.PE", lambda *a, **kw: pe)
+
+        with pytest.raises(CliError, match=r"unsupported game version 2\."):
+            parse_args()
 
 
 class TestMain:

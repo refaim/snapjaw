@@ -1,4 +1,4 @@
-# snapjaw: Vanilla World of Warcraft AddOn manager
+# snapjaw: World of Warcraft AddOn manager (vanilla and WotLK 3.3.5)
 [![CI](https://github.com/refaim/snapjaw/actions/workflows/ci.yml/badge.svg)](https://github.com/refaim/snapjaw/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/refaim/snapjaw/graph/badge.svg)](https://codecov.io/gh/refaim/snapjaw)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/release/python-3120/)
@@ -6,6 +6,7 @@
 [![GitHub release](https://img.shields.io/github/v/release/refaim/snapjaw)](https://github.com/refaim/snapjaw/releases/latest)
 
 ## Features
+- Supports vanilla (1.12) and WotLK (3.3.5) clients, including custom launchers like Project Ascension (`Ascension.exe`)
 - Support for Git repositories as addon sources
 - Detection of outdated and/or modified addons
 - Automatic handling of folder naming and nested addon folders
@@ -85,6 +86,19 @@ snapjaw update ShaguTweaks
 2022-11-01 01:53:01,602 [INFO] Saving config...
 2022-11-01 01:53:01,610 [INFO] Done!
 ```
+
+### Overriding game version detection
+
+snapjaw auto-detects whether you're on vanilla or WotLK by reading
+`WoW.exe` or `Ascension.exe` in your game directory. If detection fails
+(missing exe, unusual client) you can specify the version explicitly:
+
+```
+snapjaw --addons-dir /path/to/Interface/Addons --game-version wotlk status
+```
+
+Supported values: `vanilla` (Interface 1.x, Interface ≤ 11200) and
+`wotlk` (Interface 3.x, 30000 ≤ Interface ≤ 30300).
 
 ## Requirements for developers
 - [Python 3.12](https://www.python.org)
