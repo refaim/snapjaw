@@ -24,6 +24,7 @@ import gameversion
 import mygit
 import signature
 import toc
+import version
 
 
 class CliError(RuntimeError):
@@ -79,6 +80,7 @@ def main():
 
 def parse_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--version", action="version", version=f"snapjaw {version.VERSION}")
 
     parser.add_argument(
         "--addons-dir",
