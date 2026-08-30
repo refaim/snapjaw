@@ -1,6 +1,6 @@
 """Tests for snapjaw addon state detection (get_addon_states)."""
 
-from mygit import RemoteState
+from mygit import RemoteState, RemoteStateRequest
 from snapjaw import AddonStatus, Config, get_addon_states
 
 
@@ -219,3 +219,82 @@ class TestGetAddonStates:
         assert status_by_name["OutdatedAddon"] == AddonStatus.Outdated
         assert status_by_name["UntrackedAddon"] == AddonStatus.Untracked
         capsys.readouterr()
+
+    def test_shared_repo_fetches_once_and_progress_matches_addon_count(self, tmp_path, monkeypatch, make_addon, capsys):
+        """A shared branch is fetched once while every addon gets a state."""
+        url = "https://github.com/test/shared.git"
+        addons = [
+            make_addon(name="SharedOne", url=url, branch="main"),
+            make_addon(name="SharedTwo", url=url, branch="main"),
+        ]
+        config = Config(addons_by_key={addon.name.lower(): addon for addon in addons})
+        captured_requests = []
+
+        def mock_fetch_states(requests):
+            captured_requests.extend(requests)
+            for request in requests:
+                yield RemoteState(request.url, request.branch, "newcommit", None)
+
+        monkeypatch.setattr("snapjaw.mygit.fetch_states", mock_fetch_states)
+
+        states = get_addon_states(config, str(tmp_path))
+
+        assert captured_requests == [RemoteStateRequest(url, "main")]
+        assert {state.addon for state in states} == {"SharedOne", "SharedTwo"}
+        progress = capsys.readouterr().out
+        assert progress.endswith("2/2\r\n")
+        assert "3/2" not in progress
+
+    def test_same_url_different_branches_fetches_each_pair_once(self, tmp_path, monkeypatch, make_addon, capsys):
+        """Branches sharing a URL remain distinct requests in config order."""
+        url = "https://github.com/test/shared.git"
+        addons = [
+            make_addon(name="MainAddon", url=url, branch="main"),
+            make_addon(name="ReleaseAddon", url=url, branch="release"),
+        ]
+        config = Config(addons_by_key={addon.name.lower(): addon for addon in addons})
+        captured_requests = []
+
+        def mock_fetch_states(requests):
+            captured_requests.extend(requests)
+            for request in requests:
+                yield RemoteState(request.url, request.branch, "newcommit", None)
+
+        monkeypatch.setattr("snapjaw.mygit.fetch_states", mock_fetch_states)
+
+        states = get_addon_states(config, str(tmp_path))
+
+        assert captured_requests == [
+            RemoteStateRequest(url, "main"),
+            RemoteStateRequest(url, "release"),
+        ]
+        assert {state.addon for state in states} == {"MainAddon", "ReleaseAddon"}
+        assert capsys.readouterr().out.endswith("2/2\r\n")
+
+    def test_shared_repo_error_fans_out_without_inflating_progress(self, tmp_path, monkeypatch, make_addon, capsys):
+        """One remote error reaches every shared addon exactly once."""
+        url = "https://github.com/test/shared.git"
+        addons = [
+            make_addon(name="SharedOne", url=url, branch="main"),
+            make_addon(name="SharedTwo", url=url, branch="main"),
+        ]
+        config = Config(addons_by_key={addon.name.lower(): addon for addon in addons})
+        captured_requests = []
+
+        def mock_fetch_states(requests):
+            captured_requests.extend(requests)
+            for request in requests:
+                yield RemoteState(request.url, request.branch, None, "authentication failed")
+
+        monkeypatch.setattr("snapjaw.mygit.fetch_states", mock_fetch_states)
+
+        states = get_addon_states(config, str(tmp_path))
+
+        assert captured_requests == [RemoteStateRequest(url, "main")]
+        assert [(state.addon, state.error) for state in states] == [
+            ("SharedOne", "authentication failed"),
+            ("SharedTwo", "authentication failed"),
+        ]
+        progress = capsys.readouterr().out
+        assert progress.endswith("2/2\r\n")
+        assert "3/2" not in progress

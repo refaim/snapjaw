@@ -118,12 +118,12 @@ class _RemoteLsResult:
 def fetch_states(requests: list[RemoteStateRequest]) -> Iterator[RemoteState]:
     with TemporaryDirectory() as repo_dir:
         repo = pygit2.init_repository(repo_dir)
-        remote_name_to_branches: dict[str, list[str]] = {}
+        remote_name_to_branches: dict[str, dict[str, None]] = {}
         for request in requests:
             name = sha1(request.url.encode("utf-8")).hexdigest()
             if not _has_remote(repo, name):
                 repo.remotes.create(name, request.url)
-            remote_name_to_branches.setdefault(name, []).append(request.branch)
+            remote_name_to_branches.setdefault(name, {})[request.branch] = None
 
         def ls(remote: pygit2.Remote) -> _RemoteLsResult:
             try:

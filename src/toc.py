@@ -18,22 +18,31 @@ class _TocFile:
     game_version: int
 
 
-def find_addons(dir_path: str, expansion: Expansion) -> Generator[Addon, None, None]:
+def find_addons(dir_path: str, expansion: Expansion | None) -> Generator[Addon, None, None]:
     def sort_key(toc: _TocFile) -> int:
         return len(toc.path.parents)
 
     addon_paths = []
     for toc_file in sorted(_find_toc_files(dir_path, expansion), key=sort_key):
         if all(parent not in addon_paths for parent in toc_file.path.parents):
-            yield Addon(name=toc_file.path.stem, path=str(toc_file.path.parent))
+            addon_dir = toc_file.path.parent
+            name = toc_file.path.stem
+            if addon_dir != Path(dir_path) and any(
+                path.is_file()
+                and path.suffix.casefold() == ".toc"
+                and path.stem.casefold() == addon_dir.name.casefold()
+                for path in addon_dir.iterdir()
+            ):
+                name = addon_dir.name
+            yield Addon(name=name, path=str(toc_file.path.parent))
             addon_paths.append(toc_file.path.parent)
 
 
-def _find_toc_files(root_dir: str, expansion: Expansion) -> Generator[_TocFile, None, None]:
+def _find_toc_files(root_dir: str, expansion: Expansion | None) -> Generator[_TocFile, None, None]:
     for path in Path(root_dir).rglob("*"):
         if path.is_file() and path.suffix.lower() == ".toc":
             game_version = _get_game_version(path)
-            if game_version is not None and _interface_matches(game_version, expansion):
+            if game_version is not None and (expansion is None or _interface_matches(game_version, expansion)):
                 yield _TocFile(path, game_version)
 
 
