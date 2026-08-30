@@ -369,7 +369,8 @@ def cmd_status(config: Config, args):
         headers.append("error")
 
     cr.init()
-    print(tabulate.tabulate(table, tablefmt="psql", headers=headers))
+    if table:
+        print(tabulate.tabulate(table, tablefmt="psql", headers=headers))
     if not args.verbose:
         num_updated = Counter(s.status for s in addon_states)[AddonStatus.UpToDate]
         if num_updated > 0:
