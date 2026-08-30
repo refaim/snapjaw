@@ -779,7 +779,7 @@ class TestCmdStatus:
         assert "No addons found" in capsys.readouterr().out
 
     def test_with_addons_shows_table(self, tmp_path, monkeypatch, fixed_now, capsys):
-        """Addons are displayed in table format."""
+        """Non-verbose mode shows only addons needing attention."""
         monkeypatch.setattr(
             "snapjaw.get_addon_states",
             lambda config, d: [
@@ -791,7 +791,10 @@ class TestCmdStatus:
         args = SimpleNamespace(addons_dir=str(tmp_path), verbose=False)
         cmd_status(config, args)
         out = capsys.readouterr().out
+        assert "+---" in out
+        assert "| addon" in out
         assert "MyAddon" in out
+        assert "Other" not in out
         assert "1 other addon is up to date" in out
 
     def test_verbose_shows_all_addons(self, tmp_path, monkeypatch, fixed_now, capsys):
@@ -800,13 +803,17 @@ class TestCmdStatus:
             "snapjaw.get_addon_states",
             lambda config, d: [
                 AddonState("MyAddon", AddonStatus.UpToDate, None, fixed_now, fixed_now),
+                AddonState("Other", AddonStatus.UpToDate, None, fixed_now, fixed_now),
             ],
         )
         config = Config(addons_by_key={})
         args = SimpleNamespace(addons_dir=str(tmp_path), verbose=True)
         cmd_status(config, args)
         out = capsys.readouterr().out
+        assert "+---" in out
+        assert "| addon" in out
         assert "MyAddon" in out
+        assert "Other" in out
 
     def test_with_errors_shows_error_column(self, tmp_path, monkeypatch, fixed_now, capsys):
         """Addons with errors show error message."""
@@ -823,7 +830,7 @@ class TestCmdStatus:
         assert "connection refused" in out
 
     def test_all_up_to_date_shows_summary(self, tmp_path, monkeypatch, fixed_now, capsys):
-        """All up-to-date shows count summary without table rows."""
+        """All up-to-date shows count summary without a table."""
         monkeypatch.setattr(
             "snapjaw.get_addon_states",
             lambda config, d: [
@@ -836,6 +843,8 @@ class TestCmdStatus:
         cmd_status(config, args)
         out = capsys.readouterr().out
         assert "2 addons are up to date" in out
+        assert "+---" not in out
+        assert "| addon" not in out
 
     def test_none_dates_handled(self, tmp_path, monkeypatch, capsys):
         """Addons with None dates (untracked) don't crash."""
