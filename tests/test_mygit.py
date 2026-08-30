@@ -147,6 +147,46 @@ class TestFetchStates:
 
         assert len(states) == 0
 
+    def test_duplicate_requests_yield_one_state(self, mock_remote, mock_pygit2_repo, fetch_states_patches):
+        """Repeated requests for one URL and branch are deduplicated."""
+        url = "https://github.com/test/repo.git"
+        remote = mock_remote(
+            "abc123",
+            url,
+            refs=[SimpleNamespace(name="refs/heads/main", symref_target="", oid="deadbeef")],
+        )
+        mock_pygit2_repo.remotes.__iter__ = MagicMock(return_value=iter([remote]))
+        requests = [RemoteStateRequest(url, "main"), RemoteStateRequest(url, "main")]
+
+        with fetch_states_patches():
+            states = list(fetch_states(requests))
+
+        assert [(state.url, state.branch) for state in states] == [(url, "main")]
+        remote.list_heads.assert_called_once_with()
+
+    def test_two_branches_share_one_list_heads_call(self, mock_remote, mock_pygit2_repo, fetch_states_patches):
+        """Distinct ordered branches on one URL use one remote lookup."""
+        url = "https://github.com/test/repo.git"
+        remote = mock_remote(
+            "abc123",
+            url,
+            refs=[
+                SimpleNamespace(name="refs/heads/main", symref_target="", oid="maincommit"),
+                SimpleNamespace(name="refs/heads/release", symref_target="", oid="releasecommit"),
+            ],
+        )
+        mock_pygit2_repo.remotes.__iter__ = MagicMock(return_value=iter([remote]))
+        requests = [RemoteStateRequest(url, "release"), RemoteStateRequest(url, "main")]
+
+        with fetch_states_patches():
+            states = list(fetch_states(requests))
+
+        assert [(state.branch, state.head_commit_hex) for state in states] == [
+            ("release", "releasecommit"),
+            ("main", "maincommit"),
+        ]
+        remote.list_heads.assert_called_once_with()
+
 
 class TestCloneInternalProcess:
     """Tests for _clone() - the subprocess worker function.

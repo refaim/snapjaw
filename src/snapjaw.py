@@ -226,6 +226,42 @@ def install_addon(
             )
             config.save()
 
+        installed_addon_keys = {addon_key(addon.name) for addon in addons_by_dir.values()}
+        ghost_candidates = [
+            (key, addon)
+            for key, addon in config.addons_by_key.items()
+            if (addon.url, addon.branch) == (repo_url, repo.branch)
+            and addon_key(addon.name) not in installed_addon_keys
+        ]
+        if ghost_candidates:
+            repository_addon_keys = {addon_key(addon.name) for addon in toc.find_addons(repo.workdir, None)}
+        else:
+            repository_addon_keys = set()
+
+        removed_ghost = False
+        for key, configured_addon in ghost_candidates:
+            if addon_key(configured_addon.name) in repository_addon_keys:
+                continue
+
+            del config.addons_by_key[key]
+            removed_ghost = True
+            configured_addon_dir = os.path.join(addons_dir, configured_addon.name)
+            if os.path.isdir(configured_addon_dir):
+                if configured_addon.checksum is not None and signature.validate(
+                    configured_addon_dir, configured_addon.checksum
+                ):
+                    remove_addon_dir(configured_addon_dir)
+                    logging.info(f'Removed stale addon "{configured_addon.name}"')
+                else:
+                    logging.warning(
+                        f'Stale addon folder "{configured_addon.name}" was left in place because it was modified'
+                    )
+            else:
+                logging.info(f'Removed stale addon "{configured_addon.name}" from config')
+
+        if removed_ghost:
+            config.save()
+
         logging.info("Done")
 
 
@@ -261,18 +297,27 @@ def cmd_update(config: Config, args):
         addons = [get_addon_from_config(config, name) for name in args.names]
     else:
         addons = []
+        errors_by_repo: dict[tuple[str, str], tuple[list[str], str]] = {}
         for state in get_addon_states(config, args.addons_dir):
             if state.error is not None:
-                print(f"Error: {state.addon}: {state.error}")
+                addon = config.addons_by_key.get(addon_key(state.addon))
+                if addon is None:
+                    print(f"Error: {state.addon}: {state.error}")
+                else:
+                    names, _ = errors_by_repo.setdefault((addon.url, addon.branch), ([], state.error))
+                    names.append(state.addon)
             elif state.status == AddonStatus.Outdated:
                 addons.append(config.addons_by_key[addon_key(state.addon)])
+        for names, error in errors_by_repo.values():
+            print(f"Error: {', '.join(names)}: {error}")
 
     if not addons:
         print("No addons to update found")
         return
 
-    for addon in addons:
-        install_addon(config, addon.url, addon.branch, args.addons_dir, args.expansion)
+    repos = {(addon.url, addon.branch): None for addon in addons}
+    for url, branch in repos:
+        install_addon(config, url, branch, args.addons_dir, args.expansion)
 
 
 def get_addon_from_config(config: Config, addon_name: str) -> ConfigAddon:
@@ -362,7 +407,11 @@ def get_addon_states(config: Config, addons_dir: str) -> list[AddonState]:
     addon_key_to_state = {}
     total_addons = len(config.addons_by_key)
     processed = 0
-    requests = [mygit.RemoteStateRequest(addon.url, addon.branch) for addon in config.addons_by_key.values()]
+    requests = [
+        mygit.RemoteStateRequest(url, branch)
+        for url, branch_to_addons in url_to_branch_to_addons.items()
+        for branch in branch_to_addons
+    ]
     for state in mygit.fetch_states(requests):
         for addon in url_to_branch_to_addons[state.url][state.branch]:
             processed += 1
