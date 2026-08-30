@@ -309,7 +309,6 @@ wheels = [
 
 [[package]]
 name = "snapjaw"
-version = "1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "colorama" },

@@ -144,25 +144,48 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Get version
+        id: version
+        env:
+          PYTHONPATH: src
+        run: python -c "from version import VERSION; print(f'version={VERSION}')" >> "$GITHUB_OUTPUT"
+
+      - name: Check tag
+        id: tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/${VERSION}" > /dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            status=$?
+            if [ "$status" -ne 2 ]; then
+              exit "$status"
+            fi
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Download artifacts
+        if: steps.tag.outputs.exists == 'false'
         uses: actions/download-artifact@v8
 
-      - name: Get date
-        id: date
-        run: echo "date=$(date +%Y.%m.%d)" >> "$GITHUB_OUTPUT"
-
       - name: Rename artifacts
+        if: steps.tag.outputs.exists == 'false'
         env:
-          VERSION: ${{ steps.date.outputs.date }}.${{ github.run_number }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           mv snapjaw-windows-x86_64/snapjaw-windows-x86_64.zip snapjaw-${VERSION}-windows-x86_64.zip
           mv snapjaw-linux-x86_64/snapjaw-linux-x86_64.tar.gz snapjaw-${VERSION}-linux-x86_64.tar.gz
 
       - name: Release
+        if: steps.tag.outputs.exists == 'false'
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ steps.date.outputs.date }}.${{ github.run_number }}
-          name: ${{ steps.date.outputs.date }}.${{ github.run_number }}
+          tag_name: ${{ steps.version.outputs.version }}
+          name: ${{ steps.version.outputs.version }}
           files: |
-            snapjaw-${{ steps.date.outputs.date }}.${{ github.run_number }}-windows-x86_64.zip
-            snapjaw-${{ steps.date.outputs.date }}.${{ github.run_number }}-linux-x86_64.tar.gz
+            snapjaw-${{ steps.version.outputs.version }}-windows-x86_64.zip
+            snapjaw-${{ steps.version.outputs.version }}-linux-x86_64.tar.gz
